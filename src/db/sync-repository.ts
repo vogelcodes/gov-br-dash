@@ -79,6 +79,11 @@ export class SqliteSyncRepository {
     return row ? { raw: JSON.parse(row.raw_json) as unknown, lastSyncedAt: row.last_synced_at } : null;
   }
 
+  userOwnsUasg(userId: string, codigoUasg: string): boolean {
+    const row = this.db.prepare("SELECT 1 FROM user_uasgs WHERE user_id = ? AND codigo_uasg = ? LIMIT 1").get(userId, codigoUasg);
+    return row !== undefined;
+  }
+
   userOwnsArp(userId: string, numeroControlePncpAta: string): boolean {
     const row = this.db.prepare(`
       SELECT 1

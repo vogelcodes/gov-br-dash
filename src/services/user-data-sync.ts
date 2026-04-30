@@ -1,6 +1,7 @@
 import type { ArpItem, ComprasGovClient } from "../clients/compras-gov.js";
 import type { PortalTransparenciaClient } from "../clients/portal-transparencia.js";
 import { normalizeDigits, type SqliteSyncRepository } from "../db/sync-repository.js";
+import { AuthError } from "./auth.js";
 import { normalizeUasg } from "./user-uasgs.js";
 
 export interface SyncResult {
@@ -43,6 +44,14 @@ export class UserDataSyncService {
       result.empenhos += itemResult.empenhos;
     }
     return result;
+  }
+
+  async syncUasgForUser(userId: string, codigoUasg: string): Promise<SyncResult> {
+    const normalizedCodigoUasg = normalizeUasg(codigoUasg);
+    if (!this.repository.userOwnsUasg(userId, normalizedCodigoUasg)) {
+      throw new AuthError("UASG is not linked to this user", 403);
+    }
+    return this.syncUasg(normalizedCodigoUasg);
   }
 
   async refreshArp(numeroControlePncpAta: string): Promise<SyncResult> {

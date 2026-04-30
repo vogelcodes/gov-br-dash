@@ -90,7 +90,7 @@ export function authenticate(authService: AuthService) {
   };
 }
 
-function getSessionToken(request: FastifyRequest): string | undefined {
+export function getSessionToken(request: FastifyRequest): string | undefined {
   const signed = request.unsignCookie(request.cookies.session ?? "");
   return signed.valid ? signed.value : undefined;
 }

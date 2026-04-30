@@ -12,6 +12,10 @@ export class UserUasgService {
     return this.repository.listForUser(userId);
   }
 
+  listForUser(userId: string): LinkedUasgRecord[] {
+    return this.list(userId);
+  }
+
   async link(userId: string, codigoUasg: string): Promise<LinkedUasgRecord> {
     const normalizedCodigoUasg = normalizeUasg(codigoUasg);
     if (this.repository.userHasUasg(userId, normalizedCodigoUasg)) {
@@ -31,8 +35,16 @@ export class UserUasgService {
     return this.repository.linkUasg(userId, uasg);
   }
 
+  async addForUser(userId: string, codigoUasg: string): Promise<LinkedUasgRecord> {
+    return this.link(userId, codigoUasg);
+  }
+
   unlink(userId: string, codigoUasg: string): boolean {
     return this.repository.unlinkUasg(userId, normalizeUasg(codigoUasg));
+  }
+
+  removeForUser(userId: string, codigoUasg: string): boolean {
+    return this.unlink(userId, codigoUasg);
   }
 
   assertOwnsUasg(userId: string, codigoUasg: string): void {
