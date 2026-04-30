@@ -41,16 +41,14 @@ src/
 │   └── index.ts       # Leitura e validação de env vars
 ├── routes/
 │   ├── health.ts      # GET /health
+│   ├── auth.ts        # POST /api/auth/signup|login|logout, GET /api/auth/me
+│   ├── me-uasgs.ts    # CRUD de UASGs do usuário autenticado
 │   └── version.ts     # GET /version
-├── services/
-│   └── example.ts     # Regras de negócio
-├── clients/
-│   └── govbr.ts       # Client para APIs externas
-├── cache/
-│   ├── store.ts       # Interface CacheStore (abstraída)
-│   └── in-memory.ts   # Implementação in-memory com TTL
-└── security/
-    └── index.ts       # Middlewares: rate-limit, helmet, cors
+├── auth/              # Hash de senha, token opaco e sessões
+├── db/                # SQLite persistente + schema/migrations simples
+├── services/          # Regras de negócio
+├── clients/           # Clientes para APIs externas
+└── cache/             # CacheStore + implementação in-memory
 
 tests/
 ├── unit/
@@ -105,6 +103,8 @@ Toda integração externa **deve** passar por service/client com cache.
 - `@fastify/cors` — CORS explícito
 - `@fastify/helmet` — Security headers
 - `@fastify/rate-limit` — Rate limiting
+- `@fastify/cookie` — Cookie assinado para sessão HttpOnly
+- `better-sqlite3` — Persistência local SQLite síncrona e simples
 - `axios` — HTTP client para APIs externas
 - `zod` — Validação de schemas e env vars
 
@@ -135,9 +135,18 @@ Antes de adicionar qualquer pacote:
 | `NODE_ENV`                  | Sim         | `development` | `development` \| `production` \| `test`           |
 | `PORT`                      | Não         | `3000`        | Porta HTTP                                        |
 | `LOG_LEVEL`                 | Não         | `info`        | `debug` \| `info` \| `warn` \| `error`            |
-| `GOVBR_API_BASE_URL`        | Sim\*       | —             | URL base da API gov.br                            |
-| `GOVBR_API_TIMEOUT_MS`      | Não         | `5000`        | Timeout em ms para chamadas upstream              |
+| `GOVBR_API_BASE_URL`        | Não         | Portal Transparência | URL base da API Portal da Transparência    |
+| `GOVBR_API_KEY`             | Sim         | —             | Chave de API do Portal da Transparência     |
+| `GOVBR_API_TIMEOUT_MS`      | Não         | `5000`        | Timeout em ms para Portal da Transparência  |
+| `COMPRAS_GOV_API_BASE_URL`  | Não         | Dados Abertos | URL base da API Compras.gov.br                   |
+| `COMPRAS_GOV_API_TIMEOUT_MS`| Não         | `30000`       | Timeout em ms para Compras.gov.br                |
+| `COMPRAS_GOV_MAX_RETRIES`   | Não         | `3`           | Tentativas em falhas transitórias                |
+| `COMPRAS_GOV_RETRY_DELAY_MS`| Não         | `500`         | Delay base entre retries                         |
+| `SQLITE_DB_PATH`            | Não         | `data/app.sqlite` | Caminho do banco SQLite persistente          |
+| `SESSION_COOKIE_SECRET`     | Não         | dev secret    | Segredo mínimo 32 chars para assinar cookies     |
+| `SESSION_TTL_SECONDS`       | Não         | `2592000`     | TTL das sessões                                  |
 | `CACHE_DEFAULT_TTL_SECONDS` | Não         | `60`          | TTL padrão do cache                               |
+| `UASG_CACHE_TTL_SECONDS`    | Não         | `86400`       | TTL de cache para consulta de UASG                |
 | `CACHE_STALE_TTL_SECONDS`   | Não         | `120`         | TTL stale do cache                                |
 | `CACHE_MAX_ENTRIES`         | Não         | `10000`       | Máximo de entradas no cache in-memory             |
 | `RATE_LIMIT_MAX`            | Não         | `100`         | Requisições máximas por janela                    |
@@ -145,11 +154,7 @@ Antes de adicionar qualquer pacote:
 | `CORS_ORIGIN`               | Não         | `*`           | Origem permitida para CORS                        |
 | `REDIS_URL`                 | Não         | —             | URL do Redis (futuro; se setado, cache usa Redis) |
 
-\*Obrigatório quando `NODE_ENV=production`.
-
-### Validação
-
-Todas as env vars são validadas com **Zod** na inicialização. Valores inválidos ou faltando em produção causam erro de startup com mensagem clara.
+Todas as env vars são validadas com **Zod** na inicialização. Valores inválidos causam erro de startup com mensagem clara.
 
 ---
 

@@ -56,21 +56,27 @@ cp .env.example .env
 
 ### Variables de Ambiente
 
-| Variável                    | Obrigatório | Padrão        | Descrição                               |
-| --------------------------- | ----------- | ------------- | --------------------------------------- |
-| `NODE_ENV`                  | Sim         | `development` | Ambiente: development, production, test |
-| `PORT`                      | Não         | `3000`        | Porta HTTP                              |
-| `LOG_LEVEL`                 | Não         | `info`        | Nível de log                            |
-| `GOVBR_API_BASE_URL`        | Sim\*       | —             | URL base da API gov.br                  |
-| `GOVBR_API_KEY`             | Sim         | —             | Chave de API (header `chave-api-dados`) |
-| `GOVBR_API_TIMEOUT_MS`      | Não         | `5000`        | Timeout em ms                           |
-| `CACHE_DEFAULT_TTL_SECONDS` | Não         | `60`          | TTL padrão do cache                     |
-| `CACHE_MAX_ENTRIES`         | Não         | `10000`       | Máximo de entradas no cache             |
-| `RATE_LIMIT_MAX`            | Não         | `100`         | Requisições por janela                  |
-| `RATE_LIMIT_WINDOW_SECONDS` | Não         | `60`          | Janela de rate limit                    |
-| `CORS_ORIGIN`               | Não         | `*`           | Origem CORS                             |
-
-\*Obrigatório quando NODE_ENV=production.
+| Variável                     | Obrigatório | Padrão             | Descrição                               |
+| ---------------------------- | ----------- | ------------------ | --------------------------------------- |
+| `NODE_ENV`                   | Sim         | `development`      | Ambiente: development, production, test |
+| `PORT`                       | Não         | `3000`             | Porta HTTP                              |
+| `LOG_LEVEL`                  | Não         | `info`             | Nível de log                            |
+| `GOVBR_API_BASE_URL`         | Não         | Portal Transparência | URL base do Portal da Transparência   |
+| `GOVBR_API_KEY`              | Sim         | —                  | Chave de API do Portal da Transparência |
+| `GOVBR_API_TIMEOUT_MS`       | Não         | `5000`             | Timeout do Portal da Transparência     |
+| `COMPRAS_GOV_API_BASE_URL`   | Não         | Dados Abertos      | URL base da API Compras.gov.br          |
+| `COMPRAS_GOV_API_TIMEOUT_MS` | Não         | `30000`            | Timeout em ms                           |
+| `COMPRAS_GOV_MAX_RETRIES`    | Não         | `3`                | Tentativas em falhas transitórias       |
+| `COMPRAS_GOV_RETRY_DELAY_MS` | Não         | `500`              | Delay base entre retries                |
+| `SQLITE_DB_PATH`             | Não         | `data/app.sqlite`  | Caminho do banco SQLite                 |
+| `SESSION_COOKIE_SECRET`      | Não         | dev secret         | Segredo para cookies assinados          |
+| `SESSION_TTL_SECONDS`        | Não         | `2592000`          | TTL das sessões                         |
+| `CACHE_DEFAULT_TTL_SECONDS`  | Não         | `60`               | TTL padrão do cache                     |
+| `UASG_CACHE_TTL_SECONDS`     | Não         | `86400`            | TTL de cache para consulta de UASG      |
+| `CACHE_MAX_ENTRIES`          | Não         | `10000`            | Máximo de entradas no cache             |
+| `RATE_LIMIT_MAX`             | Não         | `100`              | Requisições por janela                  |
+| `RATE_LIMIT_WINDOW_SECONDS`  | Não         | `60`               | Janela de rate limit                    |
+| `CORS_ORIGIN`                | Não         | `*`                | Origem CORS                             |
 
 ## Scripts
 
@@ -113,6 +119,34 @@ npm run verify
 ```
 
 ## API Endpoints
+
+### POST /api/auth/signup
+
+Cria um usuário com email/senha, normaliza email, salva hash `scrypt` e inicia sessão via cookie `session` HttpOnly.
+
+### POST /api/auth/login
+
+Valida credenciais e inicia sessão via cookie `session` HttpOnly.
+
+### POST /api/auth/logout
+
+Revoga a sessão atual e limpa o cookie.
+
+### GET /api/auth/me
+
+Retorna o usuário autenticado ou `401` quando não há sessão válida.
+
+### GET /api/me/uasgs
+
+Lista as UASGs vinculadas ao usuário autenticado.
+
+### POST /api/me/uasgs
+
+Vincula uma UASG ao usuário autenticado. Aceita `codigoUasg` com ou sem máscara, valida contra o serviço de UASG e limita a 3 vínculos por usuário.
+
+### DELETE /api/me/uasgs/:codigoUasg
+
+Remove um vínculo de UASG do usuário autenticado.
 
 ### GET /api/arps/uasg/:codigoUasg
 
@@ -193,7 +227,11 @@ src/
 │   └── index.ts       # Validação de env vars
 ├── routes/
 │   ├── health.ts      # GET /health
+│   ├── auth.ts        # Autenticação e sessões
+│   ├── me-uasgs.ts    # UASGs do usuário autenticado
 │   └── version.ts     # GET /version
+├── auth/              # Hash de credenciais e tokens
+├── db/                # SQLite persistente
 ├── services/          # Regras de negócio
 ├── clients/           # Clientes externos
 ├── cache/

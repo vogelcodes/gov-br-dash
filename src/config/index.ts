@@ -53,6 +53,12 @@ const envSchema = z.object({
   COMPRAS_GOV_API_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
   COMPRAS_GOV_MAX_RETRIES: z.coerce.number().int().min(0).default(3),
   COMPRAS_GOV_RETRY_DELAY_MS: z.coerce.number().int().positive().default(500),
+  SQLITE_DB_PATH: z.string().min(1).default("data/app.sqlite"),
+  SESSION_COOKIE_SECRET: z
+    .string()
+    .min(32)
+    .default("development-session-cookie-secret-32-chars"),
+  SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(2592000),
   CACHE_DEFAULT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
   UASG_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
   CACHE_STALE_TTL_SECONDS: z.coerce.number().int().positive().default(120),
@@ -83,6 +89,9 @@ export function loadEnv(): Env {
     COMPRAS_GOV_API_TIMEOUT_MS: process.env.COMPRAS_GOV_API_TIMEOUT_MS,
     COMPRAS_GOV_MAX_RETRIES: process.env.COMPRAS_GOV_MAX_RETRIES,
     COMPRAS_GOV_RETRY_DELAY_MS: process.env.COMPRAS_GOV_RETRY_DELAY_MS,
+    SQLITE_DB_PATH: process.env.SQLITE_DB_PATH,
+    SESSION_COOKIE_SECRET: process.env.SESSION_COOKIE_SECRET,
+    SESSION_TTL_SECONDS: process.env.SESSION_TTL_SECONDS,
     CACHE_DEFAULT_TTL_SECONDS: process.env.CACHE_DEFAULT_TTL_SECONDS,
     UASG_CACHE_TTL_SECONDS: process.env.UASG_CACHE_TTL_SECONDS,
     CACHE_STALE_TTL_SECONDS: process.env.CACHE_STALE_TTL_SECONDS,
