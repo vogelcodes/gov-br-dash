@@ -17,7 +17,7 @@ describe("HttpComprasGovClient", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-30T12:00:00.000Z"));
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.mocked(axios.create).mockReturnValue({ get } as never);
     vi.mocked(axios.isAxiosError).mockReturnValue(false);
   });
@@ -26,13 +26,16 @@ describe("HttpComprasGovClient", () => {
     vi.useRealTimers();
   });
 
-  it("consults ARPs for a unidade gerenciadora in two 365-day windows", async () => {
+  it("consults ARPs by final validity for the current calendar year plus the next two years", async () => {
     get
       .mockResolvedValueOnce({
-        data: { resultado: [{ numeroAtaRegistroPreco: "90018/2025" }] },
+        data: { resultado: [{ numeroAtaRegistroPreco: "90018/2026" }] },
       })
       .mockResolvedValueOnce({
-        data: { resultado: [{ numeroAtaRegistroPreco: "30002/2024" }] },
+        data: { resultado: [{ numeroAtaRegistroPreco: "30002/2027" }] },
+      })
+      .mockResolvedValueOnce({
+        data: { resultado: [{ numeroAtaRegistroPreco: "70001/2028" }] },
       });
 
     const client = new HttpComprasGovClient({
@@ -46,28 +49,38 @@ describe("HttpComprasGovClient", () => {
       baseURL: "https://dadosabertos.compras.gov.br",
       timeout: 5000,
     });
-    expect(get).toHaveBeenCalledTimes(2);
-    expect(get).toHaveBeenNthCalledWith(1, "/modulo-arp/1_consultarARP", {
+    expect(get).toHaveBeenCalledTimes(3);
+    expect(get).toHaveBeenNthCalledWith(1, "/modulo-arp/1.2_consultarARP_FimVigencia", {
       params: {
         pagina: 1,
         tamanhoPagina: 500,
         codigoUnidadeGerenciadora: "160292",
-        dataVigenciaInicialMin: "2025-05-01",
-        dataVigenciaInicialMax: "2026-04-30",
+        dataVigenciaFinalMin: "2026-01-01",
+        dataVigenciaFinalMax: "2026-12-31",
       },
     });
-    expect(get).toHaveBeenNthCalledWith(2, "/modulo-arp/1_consultarARP", {
+    expect(get).toHaveBeenNthCalledWith(2, "/modulo-arp/1.2_consultarARP_FimVigencia", {
       params: {
         pagina: 1,
         tamanhoPagina: 500,
         codigoUnidadeGerenciadora: "160292",
-        dataVigenciaInicialMin: "2024-05-01",
-        dataVigenciaInicialMax: "2025-04-30",
+        dataVigenciaFinalMin: "2027-01-01",
+        dataVigenciaFinalMax: "2027-12-31",
+      },
+    });
+    expect(get).toHaveBeenNthCalledWith(3, "/modulo-arp/1.2_consultarARP_FimVigencia", {
+      params: {
+        pagina: 1,
+        tamanhoPagina: 500,
+        codigoUnidadeGerenciadora: "160292",
+        dataVigenciaFinalMin: "2028-01-01",
+        dataVigenciaFinalMax: "2028-12-31",
       },
     });
     expect(result).toEqual([
-      { numeroAtaRegistroPreco: "90018/2025" },
-      { numeroAtaRegistroPreco: "30002/2024" },
+      { numeroAtaRegistroPreco: "90018/2026" },
+      { numeroAtaRegistroPreco: "30002/2027" },
+      { numeroAtaRegistroPreco: "70001/2028" },
     ]);
   });
 
@@ -87,7 +100,13 @@ describe("HttpComprasGovClient", () => {
       })
       .mockResolvedValueOnce({
         data: {
-          resultado: [{ numeroAtaRegistroPreco: "30002/2025" }],
+          resultado: [{ numeroAtaRegistroPreco: "30002/2027" }],
+          totalPaginas: 1,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          resultado: [{ numeroAtaRegistroPreco: "40001/2028" }],
           totalPaginas: 1,
         },
       });
@@ -99,20 +118,21 @@ describe("HttpComprasGovClient", () => {
 
     const result = await client.consultarArpsPorUnidadeGerenciadora("160292");
 
-    expect(get).toHaveBeenCalledTimes(3);
-    expect(get).toHaveBeenNthCalledWith(2, "/modulo-arp/1_consultarARP", {
+    expect(get).toHaveBeenCalledTimes(4);
+    expect(get).toHaveBeenNthCalledWith(2, "/modulo-arp/1.2_consultarARP_FimVigencia", {
       params: {
         pagina: 2,
         tamanhoPagina: 500,
         codigoUnidadeGerenciadora: "160292",
-        dataVigenciaInicialMin: "2025-05-01",
-        dataVigenciaInicialMax: "2026-04-30",
+        dataVigenciaFinalMin: "2026-01-01",
+        dataVigenciaFinalMax: "2026-12-31",
       },
     });
     expect(result).toEqual([
       { numeroAtaRegistroPreco: "90018/2026" },
       { numeroAtaRegistroPreco: "90019/2026" },
-      { numeroAtaRegistroPreco: "30002/2025" },
+      { numeroAtaRegistroPreco: "30002/2027" },
+      { numeroAtaRegistroPreco: "40001/2028" },
     ]);
   });
 

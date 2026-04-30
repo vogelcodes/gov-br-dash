@@ -161,7 +161,7 @@ Retorna informações da versão.
 
 #### GET /api/arps/uasg/:codigoUasg
 
-Consulta ARPs da Unidade Gerenciadora/UASG no endpoint `GET /modulo-arp/1_consultarARP` da API Compras.gov.br Dados Abertos.
+Consulta ARPs da Unidade Gerenciadora/UASG no endpoint `GET /modulo-arp/1.2_consultarARP_FimVigencia` da API Compras.gov.br Dados Abertos, filtrando por `dataVigenciaFinalMin/Max` no ano calendário atual e nos dois anos seguintes.
 
 Path params:
 

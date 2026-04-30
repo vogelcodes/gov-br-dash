@@ -16,7 +16,7 @@ describe("HttpComprasGovClient - retries", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-30T12:00:00.000Z"));
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.mocked(axios.create).mockReturnValue({ get } as never);
     vi.mocked(axios.isAxiosError).mockReturnValue(false);
   });
@@ -51,8 +51,9 @@ describe("HttpComprasGovClient - retries", () => {
     get
       .mockRejectedValueOnce(new Error("transient"))
       .mockResolvedValueOnce({
-        data: { resultado: [{ numeroAtaRegistroPreco: "90018/2025" }] },
+        data: { resultado: [{ numeroAtaRegistroPreco: "90018/2026" }] },
       })
+      .mockResolvedValueOnce({ data: { resultado: [] } })
       .mockResolvedValueOnce({ data: { resultado: [] } });
 
     const client = new HttpComprasGovClient({
@@ -64,7 +65,7 @@ describe("HttpComprasGovClient - retries", () => {
 
     const result = await client.consultarArpsPorUnidadeGerenciadora("160292");
 
-    expect(result).toEqual([{ numeroAtaRegistroPreco: "90018/2025" }]);
+    expect(result).toEqual([{ numeroAtaRegistroPreco: "90018/2026" }]);
   });
 
   it("retries consultarUasg on failure and succeeds on second attempt", async () => {
