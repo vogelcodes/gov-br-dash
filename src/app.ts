@@ -24,6 +24,7 @@ import { initializeSchema } from "./db/schema.js";
 import { SqliteAuthRepository } from "./db/auth-repository.js";
 import { SqliteUserUasgRepository } from "./db/user-uasg-repository.js";
 import { SqliteSyncRepository } from "./db/sync-repository.js";
+import fastifyStatic from "@fastify/static";
 import { healthRoute } from "./routes/health.js";
 import { versionRoute } from "./routes/version.js";
 
@@ -97,6 +98,12 @@ export async function createApp(env: Env) {
 
   const uasgService = new CachedUasgService(comprasGovClient, cache, {
     cacheTtlSeconds: env.UASG_CACHE_TTL_SECONDS,
+  });
+
+  await fastify.register(fastifyStatic, {
+    root: process.cwd() + "/public",
+    prefix: "/",
+    decorateReply: false,
   });
 
   await fastify.register(healthRoute);
