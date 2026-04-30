@@ -49,8 +49,8 @@ src/
 │   ├── health.ts          # GET /health
 │   ├── version.ts         # GET /version
 │   ├── auth.ts            # POST /api/auth/signup|login|logout, GET /api/auth/me
-│   ├── user-uasgs.ts     # CRUD for user-UASG links (protected)
-│   └── user-sync.ts      # Sync triggers per UASG/ARP/item (protected)
+│   ├── user-uasgs.ts      # GET|POST /api/me/uasgs, DELETE /api/me/uasgs/:codigoUasg (protected)
+│   └── user-sync.ts       # Protected sync/refresh triggers for linked UASGs, ARPs, items and CNPJs
 ├── services/
 │   ├── auth.ts            # Auth business logic: signup, login, logout, session mgmt
 │   ├── user-uasgs.ts     # UASG link rules (max 3 per user)
@@ -115,7 +115,9 @@ Toda integração externa **deve** passar por service/client com cache.
 - `@fastify/cors` — CORS explícito
 - `@fastify/helmet` — Security headers
 - `@fastify/rate-limit` — Rate limiting
+- `@fastify/cookie` — cookies assinados para sessão HTTP-only
 - `axios` — HTTP client para APIs externas
+- `better-sqlite3` — persistência local SQLite
 - `zod` — Validação de schemas e env vars
 
 ### Dev (qualidade e segurança)
