@@ -35,33 +35,43 @@ Prioridades: confiabilidade, segurança, rastreabilidade, testes e releases pequ
 
 ```
 src/
-├── server.ts          # Bootstrap HTTP — porta, listeners
-├── app.ts             # Composição da aplicação Fastify
+├── server.ts              # Bootstrap HTTP — porta, listeners
+├── app.ts                 # Composição da aplicação Fastify
 ├── config/
-│   └── index.ts       # Leitura e validação de env vars
+│   └── index.ts           # Leitura e validação de env vars
+├── db/
+│   ├── connection.ts      # SQLite connection factory
+│   ├── schema.ts          # Schema initialization (users, sessions, uasgs, arps, etc.)
+│   ├── auth-repository.ts  # SQLite repository for users/sessions
+│   ├── user-uasg-repository.ts
+│   └── sync-repository.ts # SQLite repository for sync state
 ├── routes/
-│   ├── health.ts      # GET /health
-│   └── version.ts     # GET /version
+│   ├── health.ts          # GET /health
+│   ├── version.ts         # GET /version
+│   ├── auth.ts            # POST /api/auth/signup|login|logout, GET /api/auth/me
+│   ├── user-uasgs.ts     # CRUD for user-UASG links (protected)
+│   └── user-sync.ts      # Sync triggers per UASG/ARP/item (protected)
 ├── services/
-│   └── example.ts     # Regras de negócio
+│   ├── auth.ts            # Auth business logic: signup, login, logout, session mgmt
+│   ├── user-uasgs.ts     # UASG link rules (max 3 per user)
+│   └── user-data-sync.ts # Data sync orchestration (ARPs, items, CNPJs)
 ├── clients/
-│   └── govbr.ts       # Client para APIs externas
+│   ├── govbr.ts           # Client para APIs externas (Portal Transparência)
+│   └── compras-gov.ts     # Client Compras.gov.br (ARPs, UASGs)
 ├── cache/
-│   ├── store.ts       # Interface CacheStore (abstraída)
-│   └── in-memory.ts   # Implementação in-memory com TTL
+│   ├── store.ts           # Interface CacheStore (abstraída)
+│   └── in-memory.ts       # Implementação in-memory com TTL
 └── security/
-    └── index.ts       # Middlewares: rate-limit, helmet, cors
+    └── index.ts           # Middlewares: rate-limit, helmet, cors
 
 tests/
 ├── unit/
 │   ├── cache/
-│   │   ├── store.test.ts
-│   │   └── in-memory.test.ts
-│   └── services/
-│       └── example.test.ts
+│   ├── clients/
+│   ├── routes/            # Route-level integration tests (fastify.inject)
+│   ├── services/
+│   └── utils/
 └── integration/
-    ├── health.test.ts
-    └── version.test.ts
 ```
 
 ### Princípios Arquiteturais
@@ -135,17 +145,26 @@ Antes de adicionar qualquer pacote:
 | `NODE_ENV`                  | Sim         | `development` | `development` \| `production` \| `test`           |
 | `PORT`                      | Não         | `3000`        | Porta HTTP                                        |
 | `LOG_LEVEL`                 | Não         | `info`        | `debug` \| `info` \| `warn` \| `error`            |
-| `GOVBR_API_BASE_URL`        | Sim\*       | —             | URL base da API gov.br                            |
+| `GOVBR_API_BASE_URL`        | Sim*        | —             | URL base da API gov.br                            |
+| `GOVBR_API_KEY`             | Sim*        | —             | Chave da API Portal da Transparência              |
 | `GOVBR_API_TIMEOUT_MS`      | Não         | `5000`        | Timeout em ms para chamadas upstream              |
+| `COMPRAS_GOV_API_BASE_URL`  | Não         | dadosabertos.compras.gov.br | URL base Compras.gov.br         |
+| `COMPRAS_GOV_API_TIMEOUT_MS`| Não         | `30000`       | Timeout em ms para chamadas Compras.gov.br        |
+| `COMPRAS_GOV_MAX_RETRIES`   | Não         | `3`           | Máximo de retries em falhas transitórias          |
+| `COMPRAS_GOV_RETRY_DELAY_MS`| Não         | `500`         | Delay em ms entre retries                         |
 | `CACHE_DEFAULT_TTL_SECONDS` | Não         | `60`          | TTL padrão do cache                               |
+| `UASG_CACHE_TTL_SECONDS`    | Não         | `86400`       | TTL do cache para dados de UASG (24h)            |
 | `CACHE_STALE_TTL_SECONDS`   | Não         | `120`         | TTL stale do cache                                |
 | `CACHE_MAX_ENTRIES`         | Não         | `10000`       | Máximo de entradas no cache in-memory             |
 | `RATE_LIMIT_MAX`            | Não         | `100`         | Requisições máximas por janela                    |
 | `RATE_LIMIT_WINDOW_SECONDS` | Não         | `60`          | Janela de rate limit em segundos                  |
 | `CORS_ORIGIN`               | Não         | `*`           | Origem permitida para CORS                        |
 | `REDIS_URL`                 | Não         | —             | URL do Redis (futuro; se setado, cache usa Redis) |
+| `SQLITE_DB_PATH`            | Não         | `data/app.sqlite` | Caminho do arquivo SQLite para persistência      |
+| `COOKIE_SECRET`             | Não**       | `dev-default` | Secret para assinar cookies (mín 32 chars)       |
 
 \*Obrigatório quando `NODE_ENV=production`.
+\**Em produção, `COOKIE_SECRET` deve ser um valor aleatório de pelo menos 32 caracteres (`openssl rand -hex 32`).
 
 ### Validação
 
