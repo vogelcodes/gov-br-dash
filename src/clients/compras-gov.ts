@@ -76,6 +76,7 @@ export type ArpComItens = Arp & {
 
 export interface ConsultarArpResponse {
   resultado: Arp[];
+  totalPaginas?: number;
 }
 
 export interface ConsultarArpItemResponse {
@@ -119,6 +120,10 @@ export interface ComprasGovClient {
     codigoUnidadeGerenciadora: string,
   ): Promise<Arp[]>;
   consultarItensDaArp(numeroControlePncpAta: string): Promise<ArpItem[]>;
+  consultarEmpenhosSaldoItem?(
+    numeroAta: string,
+    unidadeGerenciadora: string,
+  ): Promise<unknown[]>;
 }
 
 export interface UasgClient {
@@ -151,6 +156,7 @@ interface DateWindow {
 
 const CONSULTAR_ARP_ENDPOINT = "/modulo-arp/1_consultarARP";
 const CONSULTAR_ARP_ITEM_ENDPOINT = "/modulo-arp/2.1_consultarARPItem_Id";
+const CONSULTAR_EMPENHOS_SALDO_ITEM_ENDPOINT = "/modulo-arp/4_consultarEmpenhosSaldoItem";
 const CONSULTAR_UASG_ENDPOINT = "/modulo-uasg/1_consultarUasg";
 const TAMANHO_PAGINA_MAXIMO = 500;
 const QUANTIDADE_DIAS_POR_PERIODO = 365;
@@ -198,13 +204,18 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
     codigoUnidadeGerenciadora: string,
   ): Promise<Arp[]> {
     try {
-      const responses = await Promise.all(
-        this.buildLastTwoYearsWindows().map((window) =>
-          this.consultarArpsPorPeriodo(codigoUnidadeGerenciadora, window),
-        ),
-      );
+      const arps: Arp[] = [];
 
-      return responses.flatMap((response) => response.resultado);
+      for (const window of this.buildLastTwoYearsWindows()) {
+        arps.push(
+          ...(await this.consultarArpsPorPeriodo(
+            codigoUnidadeGerenciadora,
+            window,
+          )),
+        );
+      }
+
+      return arps;
     } catch (error) {
       throw this.mapError("consultarARP", error);
     }
@@ -222,6 +233,32 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
       return data.resultado;
     } catch (error) {
       throw this.mapError("consultarARPItem_Id", error);
+    }
+  }
+
+  async consultarEmpenhosSaldoItem(
+    numeroAta: string,
+    unidadeGerenciadora: string,
+  ): Promise<unknown[]> {
+    try {
+      const { data } = await withRetry(
+        () =>
+          this.http.get<{ resultado: unknown[] }>(
+            CONSULTAR_EMPENHOS_SALDO_ITEM_ENDPOINT,
+            {
+              params: {
+                pagina: 1,
+                tamanhoPagina: TAMANHO_PAGINA_MAXIMO,
+                numeroAta,
+                unidadeGerenciadora,
+              },
+            },
+          ),
+        this.retry,
+      );
+      return data.resultado;
+    } catch (error) {
+      throw this.mapError("consultarEmpenhosSaldoItem", error);
     }
   }
 
@@ -243,21 +280,32 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
   private async consultarArpsPorPeriodo(
     codigoUnidadeGerenciadora: string,
     window: DateWindow,
-  ): Promise<ConsultarArpResponse> {
-    const { data } = await withRetry(
-      () =>
-        this.http.get<ConsultarArpResponse>(CONSULTAR_ARP_ENDPOINT, {
-          params: {
-            pagina: 1,
-            tamanhoPagina: TAMANHO_PAGINA_MAXIMO,
-            codigoUnidadeGerenciadora,
-            dataVigenciaInicialMin: window.min,
-            dataVigenciaInicialMax: window.max,
-          },
-        }),
-      this.retry,
-    );
-    return data;
+  ): Promise<Arp[]> {
+    const arps: Arp[] = [];
+    let pagina = 1;
+    let totalPaginas = 1;
+
+    do {
+      const { data } = await withRetry(
+        () =>
+          this.http.get<ConsultarArpResponse>(CONSULTAR_ARP_ENDPOINT, {
+            params: {
+              pagina,
+              tamanhoPagina: TAMANHO_PAGINA_MAXIMO,
+              codigoUnidadeGerenciadora,
+              dataVigenciaInicialMin: window.min,
+              dataVigenciaInicialMax: window.max,
+            },
+          }),
+        this.retry,
+      );
+
+      arps.push(...data.resultado);
+      totalPaginas = data.totalPaginas ?? 1;
+      pagina += 1;
+    } while (pagina <= totalPaginas);
+
+    return arps;
   }
 
   private buildLastTwoYearsWindows(referenceDate = new Date()): DateWindow[] {

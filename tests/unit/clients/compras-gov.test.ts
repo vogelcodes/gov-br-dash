@@ -71,6 +71,51 @@ describe("HttpComprasGovClient", () => {
     ]);
   });
 
+  it("fetches every ARP page in each date window", async () => {
+    get
+      .mockResolvedValueOnce({
+        data: {
+          resultado: [{ numeroAtaRegistroPreco: "90018/2026" }],
+          totalPaginas: 2,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          resultado: [{ numeroAtaRegistroPreco: "90019/2026" }],
+          totalPaginas: 2,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          resultado: [{ numeroAtaRegistroPreco: "30002/2025" }],
+          totalPaginas: 1,
+        },
+      });
+
+    const client = new HttpComprasGovClient({
+      baseUrl: "https://dadosabertos.compras.gov.br",
+      timeoutMs: 5000,
+    });
+
+    const result = await client.consultarArpsPorUnidadeGerenciadora("160292");
+
+    expect(get).toHaveBeenCalledTimes(3);
+    expect(get).toHaveBeenNthCalledWith(2, "/modulo-arp/1_consultarARP", {
+      params: {
+        pagina: 2,
+        tamanhoPagina: 500,
+        codigoUnidadeGerenciadora: "160292",
+        dataVigenciaInicialMin: "2025-05-01",
+        dataVigenciaInicialMax: "2026-04-30",
+      },
+    });
+    expect(result).toEqual([
+      { numeroAtaRegistroPreco: "90018/2026" },
+      { numeroAtaRegistroPreco: "90019/2026" },
+      { numeroAtaRegistroPreco: "30002/2025" },
+    ]);
+  });
+
   it("consults items linked to an ARP by numeroControlePncpAta", async () => {
     get.mockResolvedValueOnce({
       data: {
@@ -103,6 +148,43 @@ describe("HttpComprasGovClient", () => {
         numeroControlePncpAta: "00394452000103-1-018458/2025-000002",
         numeroItem: "1",
         descricaoItem: "Tinta acrílica",
+      },
+    ]);
+  });
+
+  it("consults empenhos saldo by numeroAta and unidadeGerenciadora", async () => {
+    get.mockResolvedValueOnce({
+      data: {
+        resultado: [
+          {
+            numeroItem: "00001",
+            quantidadeEmpenhada: 22,
+            saldoEmpenho: 0,
+          },
+        ],
+      },
+    });
+
+    const client = new HttpComprasGovClient({
+      baseUrl: "https://dadosabertos.compras.gov.br",
+      timeoutMs: 5000,
+    });
+
+    const result = await client.consultarEmpenhosSaldoItem("00021/2025", "160292");
+
+    expect(get).toHaveBeenCalledWith("/modulo-arp/4_consultarEmpenhosSaldoItem", {
+      params: {
+        pagina: 1,
+        tamanhoPagina: 500,
+        numeroAta: "00021/2025",
+        unidadeGerenciadora: "160292",
+      },
+    });
+    expect(result).toEqual([
+      {
+        numeroItem: "00001",
+        quantidadeEmpenhada: 22,
+        saldoEmpenho: 0,
       },
     ]);
   });

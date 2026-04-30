@@ -61,6 +61,11 @@ const envSchema = z.object({
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   CORS_ORIGIN: z.string().default("*"),
   REDIS_URL: z.string().url().optional(),
+  SQLITE_DB_PATH: z.string().min(1).default("data/app.sqlite"),
+  COOKIE_SECRET: z
+    .string()
+    .min(32, "COOKIE_SECRET must contain at least 32 characters")
+    .default("development-cookie-secret-change-me-32"),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -91,6 +96,8 @@ export function loadEnv(): Env {
     RATE_LIMIT_WINDOW_SECONDS: process.env.RATE_LIMIT_WINDOW_SECONDS,
     CORS_ORIGIN: process.env.CORS_ORIGIN,
     REDIS_URL: process.env.REDIS_URL,
+    SQLITE_DB_PATH: process.env.SQLITE_DB_PATH,
+    COOKIE_SECRET: process.env.COOKIE_SECRET,
   };
 
   const result = envSchema.safeParse(raw);
