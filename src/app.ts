@@ -4,8 +4,6 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Env } from "./config/index.js";
 import { InMemoryCacheStore } from "./cache/in-memory.js";
 import { HttpComprasGovClient } from "./clients/compras-gov.js";
@@ -29,9 +27,9 @@ import { SqliteUserUasgRepository } from "./db/user-uasg-repository.js";
 import { SqliteSyncRepository } from "./db/sync-repository.js";
 import { healthRoute } from "./routes/health.js";
 import { versionRoute } from "./routes/version.js";
+import { resolvePublicDir } from "./static/public-dir.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const publicDir = join(__dirname, "..", "public");
+const publicDir = resolvePublicDir();
 
 export async function createApp(env: Env) {
   const fastify = Fastify({
