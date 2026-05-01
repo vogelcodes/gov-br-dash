@@ -154,12 +154,13 @@ interface DateWindow {
   max: string;
 }
 
-const CONSULTAR_ARP_ENDPOINT = "/modulo-arp/1_consultarARP";
+const CONSULTAR_ARP_ENDPOINT = "/modulo-arp/1.2_consultarARP_FimVigencia";
 const CONSULTAR_ARP_ITEM_ENDPOINT = "/modulo-arp/2.1_consultarARPItem_Id";
-const CONSULTAR_EMPENHOS_SALDO_ITEM_ENDPOINT = "/modulo-arp/4_consultarEmpenhosSaldoItem";
+const CONSULTAR_EMPENHOS_SALDO_ITEM_ENDPOINT =
+  "/modulo-arp/4_consultarEmpenhosSaldoItem";
 const CONSULTAR_UASG_ENDPOINT = "/modulo-uasg/1_consultarUasg";
-const TAMANHO_PAGINA_MAXIMO = 500;
-const QUANTIDADE_DIAS_POR_PERIODO = 365;
+const TAMANHO_PAGINA_MAXIMO = 100;
+const QUANTIDADE_ANOS_VIGENCIA_FINAL = 2;
 
 export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
   private readonly http: AxiosInstance;
@@ -169,13 +170,18 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
     this.http = axios.create({
       baseURL: options.baseUrl,
       timeout: options.timeoutMs,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        Accept: "application/json, text/plain, */*",
+      },
     });
     this.retry = {
       maxRetries: options.maxRetries ?? 0,
       delayMs: options.retryDelayMs ?? 500,
       sleep: options.sleep,
     };
-    if (options.logger) {
+    if (options.logger && this.http.interceptors?.response) {
       this.setupLogging(options.logger);
     }
   }
@@ -189,6 +195,7 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
             {
               endpoint: error.config?.url,
               params: error.config?.params,
+              fullUrl: error.request?._currentUrl ?? error.config?.url,
               status: error.response?.status,
               body: error.response?.data,
             },
@@ -206,7 +213,7 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
     try {
       const arps: Arp[] = [];
 
-      for (const window of this.buildLastTwoYearsWindows()) {
+      for (const window of this.buildFinalValidityYearWindows()) {
         arps.push(
           ...(await this.consultarArpsPorPeriodo(
             codigoUnidadeGerenciadora,
@@ -293,8 +300,8 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
               pagina,
               tamanhoPagina: TAMANHO_PAGINA_MAXIMO,
               codigoUnidadeGerenciadora,
-              dataVigenciaInicialMin: window.min,
-              dataVigenciaInicialMax: window.max,
+              dataVigenciaFinalMin: window.min,
+              dataVigenciaFinalMax: window.max,
             },
           }),
         this.retry,
@@ -308,44 +315,21 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
     return arps;
   }
 
-  private buildLastTwoYearsWindows(referenceDate = new Date()): DateWindow[] {
-    const today = this.toUtcDateOnly(referenceDate);
-    const firstWindowMin = this.addDays(
-      today,
-      -(QUANTIDADE_DIAS_POR_PERIODO - 1),
-    );
-    const secondWindowMax = this.addDays(firstWindowMin, -1);
-    const secondWindowMin = this.addDays(
-      secondWindowMax,
-      -(QUANTIDADE_DIAS_POR_PERIODO - 1),
-    );
+  private buildFinalValidityYearWindows(
+    referenceDate = new Date(),
+  ): DateWindow[] {
+    const currentYear = referenceDate.getUTCFullYear();
 
-    return [
-      {
-        min: this.formatDate(firstWindowMin),
-        max: this.formatDate(today),
+    return Array.from(
+      { length: QUANTIDADE_ANOS_VIGENCIA_FINAL },
+      (_, index) => {
+        const year = currentYear + index;
+        return {
+          min: `${year}-01-01`,
+          max: `${year}-12-31`,
+        };
       },
-      {
-        min: this.formatDate(secondWindowMin),
-        max: this.formatDate(secondWindowMax),
-      },
-    ];
-  }
-
-  private toUtcDateOnly(date: Date): Date {
-    return new Date(
-      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
     );
-  }
-
-  private addDays(date: Date, days: number): Date {
-    const nextDate = new Date(date);
-    nextDate.setUTCDate(nextDate.getUTCDate() + days);
-    return nextDate;
-  }
-
-  private formatDate(date: Date): string {
-    return date.toISOString().slice(0, 10);
   }
 
   private mapError(endpoint: string, error: unknown): ComprasGovApiError {

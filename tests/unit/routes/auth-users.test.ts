@@ -52,7 +52,7 @@ describe("auth and user UASG routes", () => {
     const app = Fastify();
     await app.register(cookie, { secret: "test-secret-with-at-least-32-chars" });
     await app.register(createAuthRoutes({ authService, secureCookies: false }));
-    await app.register(createUserUasgRoutes({ authService, userUasgService: userUasgs }));
+    await app.register(createUserUasgRoutes({ authService, userUasgService: userUasgs, syncService: { syncUasg: vi.fn().mockResolvedValue(undefined) } as never }));
     return {
       app,
       db,

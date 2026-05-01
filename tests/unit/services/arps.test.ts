@@ -11,12 +11,7 @@ describe("CachedArpsService", () => {
           numeroControlePncpAta: "00394452000103-1-018458/2025-000001",
         },
       ]),
-      consultarItensDaArp: vi.fn().mockResolvedValue([
-        {
-          numeroItem: "1",
-          descricaoItem: "Tinta acrílica",
-        },
-      ]),
+      consultarItensDaArp: vi.fn(),
     };
 
     const cache = new InMemoryCacheStore<unknown>({
@@ -31,24 +26,18 @@ describe("CachedArpsService", () => {
     await service.consultarArpsPorUasg("160292");
 
     expect(client.consultarArpsPorUnidadeGerenciadora).toHaveBeenCalledTimes(1);
-    expect(client.consultarItensDaArp).toHaveBeenCalledTimes(1);
+    expect(client.consultarItensDaArp).not.toHaveBeenCalled();
   });
 
-  it("returns ARPs enriched with their linked items", async () => {
+  it("returns ARPs without fetching items", async () => {
+    const arp = {
+      numeroAtaRegistroPreco: "90118/2025",
+      numeroControlePncpAta: "00394452000103-1-018458/2025-000002",
+    };
+
     const client: ComprasGovClient = {
-      consultarArpsPorUnidadeGerenciadora: vi.fn().mockResolvedValue([
-        {
-          numeroAtaRegistroPreco: "90118/2025",
-          numeroControlePncpAta: "00394452000103-1-018458/2025-000002",
-        },
-      ]),
-      consultarItensDaArp: vi.fn().mockResolvedValue([
-        {
-          numeroControlePncpAta: "00394452000103-1-018458/2025-000002",
-          numeroItem: "1",
-          descricaoItem: "Tinta acrílica",
-        },
-      ]),
+      consultarArpsPorUnidadeGerenciadora: vi.fn().mockResolvedValue([arp]),
+      consultarItensDaArp: vi.fn(),
     };
 
     const cache = new InMemoryCacheStore<unknown>();
@@ -56,28 +45,14 @@ describe("CachedArpsService", () => {
 
     const result = await service.consultarArpsPorUasg("160292");
 
-    expect(client.consultarItensDaArp).toHaveBeenCalledWith(
-      "00394452000103-1-018458/2025-000002",
-    );
-    expect(result).toEqual([
-      {
-        numeroAtaRegistroPreco: "90118/2025",
-        numeroControlePncpAta: "00394452000103-1-018458/2025-000002",
-        itens: [
-          {
-            numeroControlePncpAta: "00394452000103-1-018458/2025-000002",
-            numeroItem: "1",
-            descricaoItem: "Tinta acrílica",
-          },
-        ],
-      },
-    ]);
+    expect(client.consultarItensDaArp).not.toHaveBeenCalled();
+    expect(result).toEqual([arp]);
   });
 
   it("rejects invalid UASG codes", async () => {
     const client: ComprasGovClient = {
       consultarArpsPorUnidadeGerenciadora: vi.fn().mockResolvedValue([]),
-      consultarItensDaArp: vi.fn().mockResolvedValue([]),
+      consultarItensDaArp: vi.fn(),
     };
 
     const cache = new InMemoryCacheStore<unknown>();

@@ -3,6 +3,9 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Env } from "./config/index.js";
 import { InMemoryCacheStore } from "./cache/in-memory.js";
 import { HttpComprasGovClient } from "./clients/compras-gov.js";
@@ -27,6 +30,9 @@ import { SqliteSyncRepository } from "./db/sync-repository.js";
 import { healthRoute } from "./routes/health.js";
 import { versionRoute } from "./routes/version.js";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const publicDir = join(__dirname, "..", "public");
+
 export async function createApp(env: Env) {
   const fastify = Fastify({
     logger: {
@@ -49,6 +55,11 @@ export async function createApp(env: Env) {
   });
 
   await fastify.register(cookie, { secret: env.COOKIE_SECRET });
+
+  await fastify.register(fastifyStatic, {
+    root: publicDir,
+    prefix: "/",
+  });
 
   const db = createDatabase(env.SQLITE_DB_PATH);
   initializeSchema(db);
@@ -84,7 +95,10 @@ export async function createApp(env: Env) {
   });
 
   const authService = new AuthService(authRepository);
-  const userUasgService = new UserUasgService(userUasgRepository, comprasGovClient);
+  const userUasgService = new UserUasgService(
+    userUasgRepository,
+    comprasGovClient,
+  );
   const syncService = new UserDataSyncService(
     syncRepository,
     comprasGovClient,
@@ -102,18 +116,26 @@ export async function createApp(env: Env) {
   await fastify.register(healthRoute);
   await fastify.register(versionRoute);
   await fastify.register(createPessoasRoute({ service: pessoasService }));
-  await fastify.register(createArpsRoute({ service: arpsService }));
+  await fastify.register(
+    createArpsRoute({ service: arpsService, syncService }),
+  );
   await fastify.register(createUasgRoute({ service: uasgService }));
-  await fastify.register(createAuthRoutes({
-    authService,
-    secureCookies: env.NODE_ENV === "production",
-  }));
-  await fastify.register(createUserUasgRoutes({ authService, userUasgService }));
-  await fastify.register(createUserSyncRoutes({
-    authService,
-    userUasgService,
-    syncService,
-  }));
+  await fastify.register(
+    createAuthRoutes({
+      authService,
+      secureCookies: env.NODE_ENV === "production",
+    }),
+  );
+  await fastify.register(
+    createUserUasgRoutes({ authService, userUasgService, syncService }),
+  );
+  await fastify.register(
+    createUserSyncRoutes({
+      authService,
+      userUasgService,
+      syncService,
+    }),
+  );
 
   return fastify;
 }

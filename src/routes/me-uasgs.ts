@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import type { AuthService, AuthUser } from "../auth/service.js";
+import type { AuthService, PublicUser } from "../services/auth.js";
 import { getSessionToken } from "./auth.js";
 import type { UserUasgService } from "../services/user-uasgs.js";
 import type { UserDataSyncService } from "../services/user-data-sync.js";
@@ -36,7 +36,7 @@ export function createMeUasgsRoutes(deps: MeUasgsRouteDeps) {
       reply: FastifyInstance["server"],
     ) {
       void reply;
-      return deps.auth.authenticate(getSessionToken(request));
+      return deps.auth.getUserForSession(getSessionToken(request));
     }
 
     fastify.get("/api/me/uasgs", async (request, reply) => {
@@ -44,7 +44,7 @@ export function createMeUasgsRoutes(deps: MeUasgsRouteDeps) {
       if (!user) {
         return reply.code(401).send({ message: "Authentication required" });
       }
-      const uasgs = await deps.service.listForUser(user.id);
+      const uasgs = deps.service.list(user.id);
       return reply.code(200).send({ uasgs });
     });
 
@@ -55,19 +55,17 @@ export function createMeUasgsRoutes(deps: MeUasgsRouteDeps) {
       }
       const parsed = bodySchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply
-          .code(400)
-          .send({
-            message: "Invalid request body",
-            errors: parsed.error.flatten(),
-          });
+        return reply.code(400).send({
+          message: "Invalid request body",
+          errors: parsed.error.flatten(),
+        });
       }
 
       try {
-        const linked = await deps.service.addForUser(
-          user.id,
-          parsed.data.codigoUasg,
-        );
+        const linked = await deps.service.link(user.id, parsed.data.codigoUasg);
+        deps.sync.syncUasg(parsed.data.codigoUasg).catch((err: unknown) => {
+          request.log.error({ err }, "Background UASG sync failed");
+        });
         return reply.code(201).send({ uasg: linked });
       } catch (error) {
         return mapServiceError(error, reply);
@@ -89,7 +87,10 @@ export function createMeUasgsRoutes(deps: MeUasgsRouteDeps) {
           });
         }
         try {
-          const sync = await deps.sync.syncUasgForUser(user.id, parsed.data.codigoUasg);
+          const sync = await deps.sync.syncUasgForUser(
+            user.id,
+            parsed.data.codigoUasg,
+          );
           return reply.code(200).send({ sync });
         } catch (error) {
           return mapServiceError(error, reply);
@@ -106,14 +107,12 @@ export function createMeUasgsRoutes(deps: MeUasgsRouteDeps) {
         }
         const parsed = paramsSchema.safeParse(request.params);
         if (!parsed.success) {
-          return reply
-            .code(400)
-            .send({
-              message: "Invalid route parameters",
-              errors: parsed.error.flatten(),
-            });
+          return reply.code(400).send({
+            message: "Invalid route parameters",
+            errors: parsed.error.flatten(),
+          });
         }
-        await deps.service.removeForUser(user.id, parsed.data.codigoUasg);
+        deps.service.unlink(user.id, parsed.data.codigoUasg);
         return reply.code(204).send();
       },
     );
@@ -126,8 +125,8 @@ async function requireAuthenticatedUser(
   reply: {
     code: (statusCode: number) => { send: (payload: unknown) => unknown };
   },
-): Promise<AuthUser | null> {
-  const user = await auth.authenticate(getSessionToken(request));
+): Promise<PublicUser | null> {
+  const user = auth.getUserForSession(getSessionToken(request));
   if (!user) {
     reply.code(401).send({ message: "Authentication required" });
     return null;

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>gov-br-dash</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 2rem 1rem; }
+    .container { width: 100%; max-width: 560px; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; color: #f8fafc; }
+    p { color: #94a3b8; margin-bottom: 1.5rem; font-size: 0.9rem; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem; }
+    label { display: block; font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.25rem; }
+    input { width: 100%; padding: 0.6rem 0.75rem; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #f8fafc; font-size: 0.95rem; margin-bottom: 0.75rem; }
+    input:focus { outline: none; border-color: #3b82f6; }
+    button { width: 100%; padding: 0.6rem; background: #3b82f6; color: #fff; border: none; border-radius: 4px; font-size: 0.95rem; cursor: pointer; margin-top: 0.5rem; }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #1e40af; cursor: not-allowed; }
+    .btn-ghost { background: transparent; border: 1px solid #334155; color: #94a3b8; }
+    .btn-ghost:hover { background: #1e293b; color: #e2e8f0; }
+    .btn-sm { width: auto; padding: 0.25rem 0.75rem; margin: 0; font-size: 0.8rem; }
+    .btn-danger { background: #7f1d1d; }
+    .btn-danger:hover { background: #991b1b; }
+    .error { background: #7f1d1d; border: 1px solid #b91c1c; border-radius: 4px; padding: 0.6rem; margin-bottom: 0.75rem; font-size: 0.85rem; color: #fca5a5; display: none; }
+    .success { background: #14532d; border: 1px solid #16a34a; border-radius: 4px; padding: 0.6rem; margin-bottom: 0.75rem; font-size: 0.85rem; color: #86efac; display: none; }
+    .uasg-item { display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0.75rem; background: #0f172a; border: 1px solid #1e293b; border-radius: 4px; margin-bottom: 0.5rem; font-size: 0.9rem; cursor: pointer; transition: border-color 0.15s; }
+    .uasg-item:hover { border-color: #3b82f6; }
+    .uasg-item .codigo { color: #3b82f6; font-weight: 600; }
+    .uasg-item .nome { color: #94a3b8; font-size: 0.85rem; }
+    .hidden { display: none !important; }
+    .user-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+    .user-bar span { font-size: 0.9rem; color: #94a3b8; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 6px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .section-title { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
+
+    /* ARP cards */
+    .arp-card { cursor: pointer; transition: border-color 0.15s; margin-bottom: 0.75rem; padding: 1rem; }
+    .arp-card:hover { border-color: #475569; }
+    .arp-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+    .arp-num { font-size: 0.75rem; color: #3b82f6; font-weight: 600; margin-bottom: 0.25rem; }
+    .arp-objeto { font-size: 0.85rem; color: #e2e8f0; line-height: 1.3; }
+    .arp-meta { text-align: right; flex-shrink: 0; }
+    .arp-valor { font-size: 0.8rem; color: #22c55e; font-weight: 600; }
+    .arp-vigencia { font-size: 0.75rem; color: #64748b; margin-top: 0.2rem; }
+    .arp-status { font-size: 0.7rem; color: #64748b; margin-top: 0.2rem; }
+    .arp-items { margin-top: 0.75rem; border-top: 1px solid #334155; padding-top: 0.75rem; }
+    .item-row { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.35rem 0; border-bottom: 1px solid #1e293b; font-size: 0.82rem; }
+    .item-row:last-child { border-bottom: none; }
+    .item-num { color: #64748b; font-size: 0.72rem; flex-shrink: 0; width: 2rem; }
+    .item-desc { color: #cbd5e1; flex: 1; }
+    .item-valor { color: #22c55e; flex-shrink: 0; }
+    .empty-state { text-align: center; color: #64748b; padding: 0.5rem 0; font-size: 0.85rem; }
+    .syncing-note { font-size: 0.75rem; color: #64748b; text-align: center; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Auth: Login / Signup -->
+    <div id="auth-view">
+      <h1>gov-br-dash</h1>
+      <p>Dados públicos do governo federal</p>
+      <div class="card">
+        <div id="auth-error" class="error"></div>
+        <div id="auth-success" class="success"></div>
+        <label for="email">Email</label>
+        <input type="email" id="email" placeholder="seu@email.com" autocomplete="email" />
+        <label for="password">Senha</label>
+        <input type="password" id="password" placeholder="mínimo 12 caracteres" />
+        <button id="btn-login">Entrar</button>
+        <button id="btn-signup" class="btn-ghost">Criar conta</button>
+      </div>
+    </div>
+
+    <!-- Dashboard: UASG list -->
+    <div id="dashboard-view" class="hidden">
+      <div class="user-bar">
+        <span id="user-email"></span>
+        <button id="btn-logout" class="btn-ghost btn-sm">Sair</button>
+      </div>
+      <h1>Minhas UASGs</h1>
+      <p>Cadastre até 3 UASGs para acompanhar atas de registro de preços</p>
+
+      <div class="card">
+        <div id="uasg-add-error" class="error"></div>
+        <label for="uasg-input">Código UASG</label>
+        <input type="text" id="uasg-input" placeholder="ex: 160292" maxlength="6" />
+        <button id="btn-add-uasg">Adicionar UASG</button>
+      </div>
+
+      <div id="uasg-list"></div>
+      <div id="uasg-empty" class="card hidden">
+        <p class="empty-state" style="margin:0;">Nenhuma UASG cadastrada</p>
+      </div>
+    </div>
+
+    <!-- UASG Detail: ARPs list -->
+    <div id="detail-view" class="hidden">
+      <div class="user-bar">
+        <button id="btn-back" class="btn-ghost btn-sm">← Voltar</button>
+        <button id="btn-logout-detail" class="btn-ghost btn-sm">Sair</button>
+      </div>
+      <h1 id="detail-uasg-codigo"></h1>
+      <p id="detail-uasg-nome"></p>
+
+      <div class="section-title">Atas de Registro de Preços</div>
+      <div id="arps-loading" class="card hidden">
+        <p class="empty-state" style="margin:0;"><span class="spinner"></span>Carregando...</p>
+      </div>
+      <div id="arps-list"></div>
+      <div id="arps-empty" class="card hidden">
+        <p class="empty-state" style="margin:0;">Nenhuma ARP disponível ainda.</p>
+        <p class="syncing-note">Os dados estão sendo sincronizados em segundo plano. Recarregue em alguns instantes.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const api = (method, path, body) => {
+      const opts = { method, credentials: "include", headers: {} };
+      if (body) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+      return fetch(path, opts).then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json() }));
+    };
+
+    const fmt = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtMoney = (v) => v != null ? `R$ ${fmt.format(v)}` : "—";
+    const fmtDate = (d) => d ? d.substring(0, 10).split("-").reverse().join("/") : "—";
+
+    let user = null;
+    let uasgsList = [];
+    let currentUasg = null;
+
+    // --- Views ---
+
+    async function checkSession() {
+      const r = await api("GET", "/api/auth/me");
+      if (r.ok) { user = r.body.user; showDashboard(); }
+      else { showAuth(); }
+    }
+
+    function showAuth() {
+      $("#auth-view").classList.remove("hidden");
+      $("#dashboard-view").classList.add("hidden");
+      $("#detail-view").classList.add("hidden");
+      $("#auth-error").style.display = "none";
+      $("#auth-success").style.display = "none";
+    }
+
+    function showDashboard() {
+      $("#auth-view").classList.add("hidden");
+      $("#dashboard-view").classList.remove("hidden");
+      $("#detail-view").classList.add("hidden");
+      $("#user-email").textContent = user.email;
+      loadUasgs();
+    }
+
+    async function showDetail(uasg) {
+      currentUasg = uasg;
+      $("#auth-view").classList.add("hidden");
+      $("#dashboard-view").classList.add("hidden");
+      $("#detail-view").classList.remove("hidden");
+      $("#detail-uasg-codigo").textContent = uasg.codigoUasg;
+      $("#detail-uasg-nome").textContent = uasg.nomeUasg || "";
+      await loadArps(uasg.codigoUasg);
+    }
+
+    // --- Auth ---
+
+    function setLoading(btn, on) {
+      if (on) { btn.dataset.label = btn.textContent; btn.innerHTML = '<span class="spinner"></span>aguarde'; btn.disabled = true; }
+      else { btn.textContent = btn.dataset.label || ""; btn.disabled = false; }
+    }
+
+    function showError(el, msg) { el.textContent = msg; el.style.display = "block"; }
+    function clearMsgs() {
+      $("#auth-error").style.display = "none";
+      $("#auth-success").style.display = "none";
+      $("#uasg-add-error").style.display = "none";
+    }
+
+    async function doLogin() {
+      clearMsgs();
+      const btn = $("#btn-login");
+      const email = $("#email").value.trim();
+      const password = $("#password").value;
+      if (!email || !password) { showError($("#auth-error"), "Preencha email e senha."); return; }
+      setLoading(btn, true);
+      const r = await api("POST", "/api/auth/login", { email, password });
+      setLoading(btn, false);
+      if (r.ok) { user = r.body.user; showDashboard(); }
+      else { showError($("#auth-error"), r.body.message || "Login falhou."); }
+    }
+
+    async function doSignup() {
+      clearMsgs();
+      const btn = $("#btn-signup");
+      const email = $("#email").value.trim();
+      const password = $("#password").value;
+      if (!email || !password) { showError($("#auth-error"), "Preencha email e senha."); return; }
+      if (password.length < 12) { showError($("#auth-error"), "Senha precisa de no mínimo 12 caracteres."); return; }
+      setLoading(btn, true);
+      const r = await api("POST", "/api/auth/signup", { email, password });
+      setLoading(btn, false);
+      if (r.ok) {
+        $("#auth-success").textContent = "Conta criada! Entrando...";
+        $("#auth-success").style.display = "block";
+        doLogin();
+      } else { showError($("#auth-error"), r.body.message || "Cadastro falhou."); }
+    }
+
+    async function doLogout() {
+      await api("POST", "/api/auth/logout");
+      user = null;
+      showAuth();
+    }
+
+    // --- UASG list ---
+
+    async function loadUasgs() {
+      const r = await api("GET", "/api/me/uasgs");
+      const list = $("#uasg-list");
+      const empty = $("#uasg-empty");
+      if (!r.ok) { list.innerHTML = ""; empty.classList.remove("hidden"); return; }
+      uasgsList = r.body.uasgs || [];
+      if (uasgsList.length === 0) { list.innerHTML = ""; empty.classList.remove("hidden"); return; }
+      empty.classList.add("hidden");
+      list.innerHTML = uasgsList.map((u) => `
+        <div class="uasg-item" onclick="openUasg('${u.codigoUasg}')">
+          <div>
+            <div><span class="codigo">${u.codigoUasg}</span></div>
+            <div class="nome">${u.nomeUasg || ""}</div>
+          </div>
+          <button class="btn-ghost btn-sm btn-danger" onclick="event.stopPropagation();removeUasg('${u.codigoUasg}')">×</button>
+        </div>`).join("");
+    }
+
+    function openUasg(codigoUasg) {
+      const uasg = uasgsList.find((u) => u.codigoUasg === codigoUasg);
+      if (uasg) showDetail(uasg);
+    }
+
+    async function addUasg() {
+      clearMsgs();
+      const codigoUasg = $("#uasg-input").value.trim();
+      if (!codigoUasg) { showError($("#uasg-add-error"), "Informe o código da UASG."); return; }
+      const btn = $("#btn-add-uasg");
+      setLoading(btn, true);
+      const r = await api("POST", "/api/me/uasgs", { codigoUasg });
+      setLoading(btn, false);
+      if (r.ok) { $("#uasg-input").value = ""; loadUasgs(); }
+      else { showError($("#uasg-add-error"), r.body.message || "Erro ao adicionar UASG."); }
+    }
+
+    async function removeUasg(codigoUasg) {
+      const r = await api("DELETE", `/api/me/uasgs/${codigoUasg}`);
+      if (r.ok) loadUasgs();
+    }
+
+    // --- ARP list ---
+
+    async function loadArps(codigoUasg) {
+      const list = $("#arps-list");
+      const empty = $("#arps-empty");
+      const loading = $("#arps-loading");
+      list.innerHTML = "";
+      empty.classList.add("hidden");
+      loading.classList.remove("hidden");
+
+      const r = await api("GET", `/api/me/uasgs/${codigoUasg}/arps`);
+      loading.classList.add("hidden");
+
+      if (!r.ok) { empty.classList.remove("hidden"); return; }
+      const arps = r.body.arps || [];
+      if (arps.length === 0) {
+        empty.classList.remove("hidden");
+        // Kick off sync so data appears on next load
+        api("POST", `/api/me/uasgs/${codigoUasg}/sync`).catch(() => {});
+        return;
+      }
+
+      list.innerHTML = arps.map((arp) => `
+        <div class="card arp-card" onclick="toggleItems(this, '${escAttr(arp.numeroControlePncpAta)}')">
+          <div class="arp-header">
+            <div style="flex:1;min-width:0">
+              <div class="arp-num">${arp.numeroAtaRegistroPreco}</div>
+              <div class="arp-objeto">${arp.objeto || "—"}</div>
+            </div>
+            <div class="arp-meta">
+              <div class="arp-valor">${fmtMoney(arp.valorTotal)}</div>
+              <div class="arp-vigencia">até ${fmtDate(arp.dataVigenciaFinal)}</div>
+              <div class="arp-status">${arp.quantidadeItens != null ? arp.quantidadeItens + " itens" : ""}</div>
+            </div>
+          </div>
+          <div class="arp-items hidden"></div>
+        </div>`).join("");
+    }
+
+    async function toggleItems(cardEl, pncpAta) {
+      const itemsEl = cardEl.querySelector(".arp-items");
+      if (!itemsEl.classList.contains("hidden")) {
+        itemsEl.classList.add("hidden");
+        return;
+      }
+      if (itemsEl.dataset.loaded) { itemsEl.classList.remove("hidden"); return; }
+
+      itemsEl.innerHTML = '<div class="empty-state"><span class="spinner"></span>Carregando itens...</div>';
+      itemsEl.classList.remove("hidden");
+
+      const r = await api("GET", `/api/me/arps/${encodeURIComponent(pncpAta)}/items`);
+      itemsEl.dataset.loaded = "1";
+
+      if (!r.ok || !(r.body.items || []).length) {
+        itemsEl.innerHTML = '<div class="empty-state">Itens ainda não sincronizados. Tente novamente em instantes.</div>';
+        return;
+      }
+
+      itemsEl.innerHTML = r.body.items.map((item) => `
+        <div class="item-row">
+          <span class="item-num">${item.numeroItem}</span>
+          <span class="item-desc">${item.descricaoItem || "—"}</span>
+          <span class="item-valor">${item.valorUnitario != null ? fmtMoney(item.valorUnitario) : ""}</span>
+        </div>`).join("");
+    }
+
+    function escAttr(s) { return s.replace(/'/g, "\\'"); }
+
+    // --- Events ---
+
+    $("#btn-login").addEventListener("click", doLogin);
+    $("#btn-signup").addEventListener("click", doSignup);
+    $("#btn-logout").addEventListener("click", doLogout);
+    $("#btn-logout-detail").addEventListener("click", doLogout);
+    $("#btn-back").addEventListener("click", showDashboard);
+    $("#btn-add-uasg").addEventListener("click", addUasg);
+    $("#password").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+    $("#uasg-input").addEventListener("keydown", (e) => { if (e.key === "Enter") addUasg(); });
+
+    checkSession();
+  </script>
+</body>
+</html>

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { AuthError, type AuthService } from "../services/auth.js";
 import type { UserUasgService } from "../services/user-uasgs.js";
+import type { UserDataSyncService } from "../services/user-data-sync.js";
 import { authenticate, type AuthenticatedRequest } from "./auth.js";
 
 const linkBodySchema = z.object({ codigoUasg: z.string().min(1) });
@@ -10,6 +11,7 @@ const uasgParamsSchema = z.object({ codigoUasg: z.string().min(1) });
 interface UserUasgRouteDeps {
   authService: AuthService;
   userUasgService: UserUasgService;
+  syncService: UserDataSyncService;
 }
 
 export function createUserUasgRoutes(deps: UserUasgRouteDeps) {
@@ -29,6 +31,9 @@ export function createUserUasgRoutes(deps: UserUasgRouteDeps) {
       }
       try {
         const uasg = await deps.userUasgService.link(user.id, body.data.codigoUasg);
+        deps.syncService.syncUasg(uasg.codigoUasg).catch((err: unknown) => {
+          request.log.error({ err }, "Background UASG sync failed");
+        });
         return reply.code(201).send({ uasg });
       } catch (error) {
         return sendUserDataError(reply, error);

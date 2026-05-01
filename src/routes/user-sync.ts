@@ -21,6 +21,44 @@ export function createUserSyncRoutes(deps: UserSyncRouteDeps) {
   return async function userSyncRoutes(fastify: FastifyInstance) {
     fastify.addHook("preHandler", authenticate(deps.authService));
 
+    fastify.get<{ Params: unknown }>(
+      "/api/me/uasgs/:codigoUasg/arps",
+      async (request, reply) => {
+        const params = uasgParamsSchema.safeParse(request.params);
+        if (!params.success) {
+          return reply.code(400).send({ message: "Invalid route parameters", errors: params.error.flatten() });
+        }
+        try {
+          const user = (request as AuthenticatedRequest).user;
+          deps.userUasgService.assertOwnsUasg(user.id, params.data.codigoUasg);
+          const arps = deps.syncService.listArpsForUasg(params.data.codigoUasg);
+          return reply.code(200).send({ arps });
+        } catch (error) {
+          return sendUserDataError(reply, error);
+        }
+      },
+    );
+
+    fastify.get<{ Params: unknown }>(
+      "/api/me/arps/:numeroControlePncpAta/items",
+      async (request, reply) => {
+        const params = arpParamsSchema.safeParse(request.params);
+        if (!params.success) {
+          return reply.code(400).send({ message: "Invalid route parameters", errors: params.error.flatten() });
+        }
+        try {
+          const user = (request as AuthenticatedRequest).user;
+          if (!deps.syncService.userOwnsArp(user.id, params.data.numeroControlePncpAta)) {
+            return reply.code(404).send({ message: "ARP not found for user" });
+          }
+          const items = deps.syncService.listItemsForArp(params.data.numeroControlePncpAta);
+          return reply.code(200).send({ items });
+        } catch (error) {
+          return sendRefreshError(reply, error);
+        }
+      },
+    );
+
     fastify.post<{ Params: unknown }>(
       "/api/me/uasgs/:codigoUasg/sync",
       async (request, reply) => {

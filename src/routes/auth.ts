@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { AuthError, type AuthService, type PublicUser } from "../services/auth.js";
+import {
+  AuthError,
+  type AuthService,
+  type PublicUser,
+} from "../services/auth.js";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -19,7 +23,11 @@ interface AuthRouteDeps {
 
 export function createAuthRoutes(deps: AuthRouteDeps) {
   return async function authRoutes(fastify: FastifyInstance) {
-    const sendSession = (reply: FastifyReply, token: string, expiresAt: string) => {
+    const sendSession = (
+      reply: FastifyReply,
+      token: string,
+      expiresAt: string,
+    ) => {
       reply.setCookie("session", token, {
         httpOnly: true,
         sameSite: "lax",
@@ -30,33 +38,55 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
       });
     };
 
-    fastify.post<{ Body: unknown }>("/api/auth/signup", async (request, reply) => {
-      const body = credentialsSchema.safeParse(request.body);
-      if (!body.success) {
-        return reply.code(400).send({ message: "Invalid request body", errors: body.error.flatten() });
-      }
-      try {
-        const result = await deps.authService.signup(body.data.email, body.data.password);
-        sendSession(reply, result.sessionToken, result.expiresAt);
-        return reply.code(201).send({ user: result.user });
-      } catch (error) {
-        return sendAuthError(reply, error);
-      }
-    });
+    fastify.post<{ Body: unknown }>(
+      "/api/auth/signup",
+      async (request, reply) => {
+        const body = credentialsSchema.safeParse(request.body);
+        if (!body.success) {
+          return reply
+            .code(400)
+            .send({
+              message: "Invalid request body",
+              errors: body.error.flatten(),
+            });
+        }
+        try {
+          const result = await deps.authService.signup(
+            body.data.email,
+            body.data.password,
+          );
+          sendSession(reply, result.sessionToken, result.expiresAt);
+          return reply.code(201).send({ user: result.user });
+        } catch (error) {
+          return sendAuthError(reply, error);
+        }
+      },
+    );
 
-    fastify.post<{ Body: unknown }>("/api/auth/login", async (request, reply) => {
-      const body = credentialsSchema.safeParse(request.body);
-      if (!body.success) {
-        return reply.code(400).send({ message: "Invalid request body", errors: body.error.flatten() });
-      }
-      try {
-        const result = await deps.authService.login(body.data.email, body.data.password);
-        sendSession(reply, result.sessionToken, result.expiresAt);
-        return reply.code(200).send({ user: result.user });
-      } catch (error) {
-        return sendAuthError(reply, error);
-      }
-    });
+    fastify.post<{ Body: unknown }>(
+      "/api/auth/login",
+      async (request, reply) => {
+        const body = credentialsSchema.safeParse(request.body);
+        if (!body.success) {
+          return reply
+            .code(400)
+            .send({
+              message: "Invalid request body",
+              errors: body.error.flatten(),
+            });
+        }
+        try {
+          const result = await deps.authService.login(
+            body.data.email,
+            body.data.password,
+          );
+          sendSession(reply, result.sessionToken, result.expiresAt);
+          return reply.code(200).send({ user: result.user });
+        } catch (error) {
+          return sendAuthError(reply, error);
+        }
+      },
+    );
 
     fastify.post("/api/auth/logout", async (request, reply) => {
       const token = getSessionToken(request);
@@ -78,7 +108,10 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
 }
 
 export function authenticate(authService: AuthService) {
-  return async function authHook(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  return async function authHook(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<void> {
     const token = getSessionToken(request);
     const user = authService.getUserForSession(token);
     if (!token || !user) {

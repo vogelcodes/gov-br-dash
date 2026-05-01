@@ -40,7 +40,9 @@ describe("HttpComprasGovClient - logging", () => {
     const fakeError = {
       config: {
         url: "/modulo-arp/2.1_consultarARPItem_Id",
-        params: { numeroControlePncpAta: "00394452000103-1-018458/2025-000001" },
+        params: {
+          numeroControlePncpAta: "00394452000103-1-018458/2025-000001",
+        },
       },
       response: {
         status: 400,
@@ -53,8 +55,11 @@ describe("HttpComprasGovClient - logging", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       {
         endpoint: "/modulo-arp/2.1_consultarARPItem_Id",
-        params: { numeroControlePncpAta: "00394452000103-1-018458/2025-000001" },
+        params: {
+          numeroControlePncpAta: "00394452000103-1-018458/2025-000001",
+        },
         status: 400,
+        fullUrl: "/modulo-arp/2.1_consultarARPItem_Id",
         body: "Erro ao efetuar a consulta Could not open JPA EntityManager for transaction",
       },
       "Compras.gov.br request failed",

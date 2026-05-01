@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { ComprasGovApiError } from "../clients/compras-gov.js";
 import type { ArpsService } from "../services/arps.js";
+import type { UserDataSyncService } from "../services/user-data-sync.js";
 
 const onlyDigits = (value: string): string => value.replace(/\D/g, "");
 
@@ -17,6 +18,7 @@ const uasgParamsSchema = z.object({
 
 interface ArpsRouteDeps {
   service: ArpsService;
+  syncService: UserDataSyncService;
 }
 
 function handleGatewayError(reply: FastifyReply, error: unknown) {
@@ -49,6 +51,13 @@ export function createArpsRoute(deps: ArpsRouteDeps) {
           const resultado = await deps.service.consultarArpsPorUasg(
             params.data.codigoUasg,
           );
+
+          deps.syncService
+            .syncItemsForArps(params.data.codigoUasg, resultado)
+            .catch((err: unknown) => {
+              request.log.error({ err }, "Background item sync failed");
+            });
+
           return reply.code(200).send({ resultado });
         } catch (error) {
           return handleGatewayError(reply, error);

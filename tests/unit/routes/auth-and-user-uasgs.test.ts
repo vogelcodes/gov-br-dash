@@ -52,15 +52,17 @@ describe("auth and user UASG routes", () => {
       consultarUasg: vi.fn(async (codigoUasg: string) => uasgFixture(codigoUasg)),
     };
     const userUasgService = new UserUasgService(userUasgRepository, uasgClient);
+    const syncUasg = vi.fn().mockResolvedValue(undefined);
     const app = Fastify();
 
     return {
       app,
       uasgClient,
+      syncUasg,
       async ready() {
         await app.register(cookie, { secret: "test-cookie-secret-with-enough-entropy" });
         await app.register(createAuthRoutes({ authService, secureCookies: false }));
-        await app.register(createUserUasgRoutes({ authService, userUasgService }));
+        await app.register(createUserUasgRoutes({ authService, userUasgService, syncService: { syncUasg } as never }));
       },
       async close() {
         await app.close();
@@ -138,6 +140,53 @@ describe("auth and user UASG routes", () => {
     expect(list.statusCode).toBe(200);
     expect(list.json().uasgs).toHaveLength(3);
 
+    await ctx.close();
+  });
+
+  it("fires background syncUasg when a UASG is added", async () => {
+    const ctx = buildApp();
+    await ctx.ready();
+
+    const signup = await ctx.app.inject({
+      method: "POST",
+      url: "/api/auth/signup",
+      payload: { email: "syncer@example.com", password: "correct horse battery" },
+    });
+    const session = signup.cookies[0].value;
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/me/uasgs",
+      cookies: { session },
+      payload: { codigoUasg: "160292" },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(ctx.syncUasg).toHaveBeenCalledWith("160292");
+
+    await ctx.close();
+  });
+
+  it("does not fail the response when background sync rejects", async () => {
+    const ctx = buildApp();
+    ctx.syncUasg.mockRejectedValueOnce(new Error("sync boom"));
+    await ctx.ready();
+
+    const signup = await ctx.app.inject({
+      method: "POST",
+      url: "/api/auth/signup",
+      payload: { email: "owner2@example.com", password: "correct horse battery" },
+    });
+    const session = signup.cookies[0].value;
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/me/uasgs",
+      cookies: { session },
+      payload: { codigoUasg: "160292" },
+    });
+
+    expect(response.statusCode).toBe(201);
     await ctx.close();
   });
 });

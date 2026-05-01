@@ -1,8 +1,8 @@
 import type { CacheStore } from "../cache/store.js";
-import type { ArpComItens, ComprasGovClient } from "../clients/compras-gov.js";
+import type { Arp, ComprasGovClient } from "../clients/compras-gov.js";
 
 export interface ArpsService {
-  consultarArpsPorUasg(codigoUasg: string): Promise<ArpComItens[]>;
+  consultarArpsPorUasg(codigoUasg: string): Promise<Arp[]>;
 }
 
 interface CachedArpsServiceOptions {
@@ -20,37 +20,19 @@ export class CachedArpsService implements ArpsService {
     this.cacheTtlSeconds = options.cacheTtlSeconds ?? 300;
   }
 
-  async consultarArpsPorUasg(codigoUasg: string): Promise<ArpComItens[]> {
+  async consultarArpsPorUasg(codigoUasg: string): Promise<Arp[]> {
     const normalizedCodigoUasg = codigoUasg.replace(/\D/g, "");
 
     if (normalizedCodigoUasg.length !== 6) {
       throw new Error("UASG must contain 6 digits");
     }
 
-    const key = `compras-gov:arps:v2:uasg:${normalizedCodigoUasg}`;
+    const key = `compras-gov:arps:v3:uasg:${normalizedCodigoUasg}`;
 
     return this.cache.getOrSet(
       key,
-      async () => {
-        const arps =
-          await this.client.consultarArpsPorUnidadeGerenciadora(
-            normalizedCodigoUasg,
-          );
-
-        const arpsComItens: ArpComItens[] = [];
-
-        for (const arp of arps) {
-          arpsComItens.push({
-            ...arp,
-            itens: await this.client.consultarItensDaArp(
-              arp.numeroControlePncpAta,
-            ),
-          });
-        }
-
-        return arpsComItens;
-      },
+      () => this.client.consultarArpsPorUnidadeGerenciadora(normalizedCodigoUasg),
       this.cacheTtlSeconds,
-    ) as Promise<ArpComItens[]>;
+    ) as Promise<Arp[]>;
   }
 }

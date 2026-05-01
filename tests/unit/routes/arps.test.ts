@@ -2,10 +2,10 @@ import Fastify from "fastify";
 import {
   ComprasGovApiError,
   type Arp,
-  type ArpItem,
 } from "../../../src/clients/compras-gov.js";
 import { createArpsRoute } from "../../../src/routes/arps.js";
 import type { ArpsService } from "../../../src/services/arps.js";
+import type { UserDataSyncService } from "../../../src/services/user-data-sync.js";
 
 describe("arps routes", () => {
   const arpFixture: Arp = {
@@ -37,15 +37,13 @@ describe("arps routes", () => {
     idCompra: "16029205900182025",
   };
 
-  const itemFixture: ArpItem = {
-    numeroControlePncpAta: "00394452000103-1-018458/2025-000001",
-    numeroItem: "1",
-    descricaoItem: "Tinta acrílica",
-  };
-
   const service: ArpsService = {
     consultarArpsPorUasg: vi.fn(),
   };
+
+  const syncService = {
+    syncItemsForArps: vi.fn().mockResolvedValue(undefined),
+  } as unknown as UserDataSyncService;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -53,10 +51,8 @@ describe("arps routes", () => {
 
   it("normalizes UASG and forwards request", async () => {
     const app = Fastify();
-    await app.register(createArpsRoute({ service }));
-    vi.mocked(service.consultarArpsPorUasg).mockResolvedValue([
-      { ...arpFixture, itens: [itemFixture] },
-    ]);
+    await app.register(createArpsRoute({ service, syncService }));
+    vi.mocked(service.consultarArpsPorUasg).mockResolvedValue([arpFixture]);
 
     const response = await app.inject({
       method: "GET",
@@ -64,16 +60,47 @@ describe("arps routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      resultado: [{ ...arpFixture, itens: [itemFixture] }],
-    });
+    expect(response.json()).toEqual({ resultado: [arpFixture] });
     expect(service.consultarArpsPorUasg).toHaveBeenCalledWith("160292");
+    await app.close();
+  });
+
+  it("fires background item sync after responding", async () => {
+    const app = Fastify();
+    await app.register(createArpsRoute({ service, syncService }));
+    vi.mocked(service.consultarArpsPorUasg).mockResolvedValue([arpFixture]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/arps/uasg/160292",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(syncService.syncItemsForArps).toHaveBeenCalledWith("160292", [arpFixture]);
+    await app.close();
+  });
+
+  it("does not fail the response when background sync rejects", async () => {
+    const app = Fastify();
+    const failingSync = {
+      syncItemsForArps: vi.fn().mockRejectedValue(new Error("sync exploded")),
+    } as unknown as UserDataSyncService;
+    await app.register(createArpsRoute({ service, syncService: failingSync }));
+    vi.mocked(service.consultarArpsPorUasg).mockResolvedValue([arpFixture]);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/arps/uasg/160292",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(failingSync.syncItemsForArps).toHaveBeenCalled();
     await app.close();
   });
 
   it("returns 400 when UASG is invalid", async () => {
     const app = Fastify();
-    await app.register(createArpsRoute({ service }));
+    await app.register(createArpsRoute({ service, syncService }));
 
     const response = await app.inject({
       method: "GET",
@@ -87,7 +114,7 @@ describe("arps routes", () => {
 
   it("maps upstream errors from Compras.gov.br", async () => {
     const app = Fastify();
-    await app.register(createArpsRoute({ service }));
+    await app.register(createArpsRoute({ service, syncService }));
     vi.mocked(service.consultarArpsPorUasg).mockRejectedValue(
       new ComprasGovApiError("Unavailable", 503),
     );
