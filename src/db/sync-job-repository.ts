@@ -230,9 +230,20 @@ export class SqliteSyncJobRepository {
     this.db
       .prepare(
         `UPDATE sync_jobs SET status = ?, finished_at = ?, last_error = COALESCE(?, last_error)
-         WHERE id = ?`,
+         WHERE id = ? AND status != 'cancelled'`,
       )
       .run(status, now, error ?? null, id);
+  }
+
+  cancel(id: string, userId: string): boolean {
+    const now = new Date().toISOString();
+    const res = this.db
+      .prepare(
+        `UPDATE sync_jobs SET status = 'cancelled', finished_at = ?
+         WHERE id = ? AND user_id = ? AND status IN ('queued', 'running')`,
+      )
+      .run(now, id, userId);
+    return res.changes > 0;
   }
 
   countSinceMonthStart(userId: string, now = new Date()): number {
@@ -244,7 +255,7 @@ export class SqliteSyncJobRepository {
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS count FROM sync_jobs
-         WHERE user_id = ? AND created_at >= ? AND kind = 'uasg'`,
+         WHERE user_id = ? AND created_at >= ? AND kind = 'uasg' AND status != 'cancelled'`,
       )
       .get(userId, monthStart) as { count: number };
     return row.count;

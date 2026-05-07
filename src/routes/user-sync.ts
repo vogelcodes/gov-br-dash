@@ -125,6 +125,31 @@ export function createUserSyncRoutes(deps: UserSyncRouteDeps) {
       },
     );
 
+    fastify.post<{ Params: unknown }>(
+      "/api/me/jobs/:jobId/cancel",
+      async (request, reply) => {
+        const params = jobParamsSchema.safeParse(request.params);
+        if (!params.success) {
+          return reply.code(400).send({ message: "Invalid route parameters", errors: params.error.flatten() });
+        }
+        try {
+          const user = (request as AuthenticatedRequest).user;
+          const cancelled = deps.jobRepository.cancel(params.data.jobId, user.id);
+          if (!cancelled) {
+            const job = deps.jobRepository.findById(params.data.jobId);
+            if (!job || job.userId !== user.id) {
+              return reply.code(404).send({ message: "Job not found" });
+            }
+            return reply.code(409).send({ message: "Job already finished", job });
+          }
+          const job = deps.jobRepository.findById(params.data.jobId);
+          return reply.code(200).send({ job });
+        } catch (error) {
+          return sendUserDataError(reply, error);
+        }
+      },
+    );
+
     fastify.get("/api/me/quota", async (request, reply) => {
       try {
         const user = (request as AuthenticatedRequest).user;

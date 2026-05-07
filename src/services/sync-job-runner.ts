@@ -138,6 +138,11 @@ export class SyncJobRunner {
       await this.syncService.syncUasg(job.codigoUasg, sink);
       sink.flushNow();
       this.jobs.complete(job.id, "done");
+      const completedJob = this.jobs.findById(job.id);
+      if (completedJob?.status === "cancelled") {
+        this.logger.info({ jobId: job.id }, "sync job cancelled by user");
+        return;
+      }
       this.logger.info({ jobId: job.id }, "sync job done");
       if (this.autoChainPortalSync) {
         try {
@@ -175,10 +180,12 @@ export class SyncJobRunner {
         }
         await this.portalSyncService.syncArpSuppliers(job.targetId, {
           progress: sink,
+          includeDetails: false,
         });
       } else {
         await this.portalSyncService.syncUasgSuppliers(job.codigoUasg, {
           progress: sink,
+          includeDetails: false,
         });
       }
       sink.flushNow();
@@ -244,7 +251,7 @@ export class SyncJobRunner {
       arpDone: () => {
         processed += 1;
         merge({ processedArps: processed });
-        flush();
+        flush(true);
       },
       arpFailed: (err: unknown) => {
         failed += 1;
