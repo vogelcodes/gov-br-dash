@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans bg-slate-50 text-slate-900;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded text-xs font-semibold uppercase tracking-wider cursor-pointer transition disabled:opacity-50 disabled:cursor-wait;
+  }
+  .btn-primary {
+    @apply btn bg-govbr-blue text-white hover:bg-govbr-deepblue;
+  }
+  .btn-secondary {
+    @apply btn bg-white text-govbr-blue border border-govbr-blue hover:bg-govbr-lightblue;
+  }
+  .icon-btn {
+    @apply inline-flex items-center justify-center w-7 h-7 rounded border border-slate-300 text-govbr-blue text-sm hover:bg-govbr-lightblue disabled:opacity-50 disabled:cursor-wait;
+  }
+  .panel {
+    @apply bg-white border border-slate-200 rounded-md p-6;
+  }
+  .pill {
+    @apply inline-block px-3 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider;
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-pulse-dot {
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
