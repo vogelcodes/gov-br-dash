@@ -27,4 +27,8 @@ export const arpsApi = {
       "POST",
       `/api/me/arps/${encodeURIComponent(ata)}/items/${encodeURIComponent(numeroItem)}/refresh`,
     ),
+  exportArpUrl: (ata: string, format: "csv" | "xlsx") =>
+    `/api/me/arps/${encodeURIComponent(ata)}/export.${format}`,
+  exportUasgUrl: (codigoUasg: string, format: "csv" | "xlsx") =>
+    `/api/me/uasgs/${encodeURIComponent(codigoUasg)}/export.${format}`,
 };

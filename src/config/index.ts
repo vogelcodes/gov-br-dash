@@ -46,6 +46,13 @@ const envSchema = z.object({
     .default("https://api.portaldatransparencia.gov.br"),
   GOVBR_API_KEY: z.string().min(1, "GOVBR_API_KEY is required"),
   GOVBR_API_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  GOVBR_API_MAX_RETRIES: z.coerce.number().int().min(0).default(5),
+  PORTAL_RATE_LIMIT_DAY_PER_MIN: z.coerce.number().int().positive().default(360),
+  PORTAL_RATE_LIMIT_NIGHT_PER_MIN: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(700),
   COMPRAS_GOV_API_BASE_URL: z
     .string()
     .url()
@@ -87,6 +94,9 @@ export function loadEnv(): Env {
     GOVBR_API_BASE_URL: process.env.GOVBR_API_BASE_URL,
     GOVBR_API_KEY: process.env.GOVBR_API_KEY,
     GOVBR_API_TIMEOUT_MS: process.env.GOVBR_API_TIMEOUT_MS,
+    GOVBR_API_MAX_RETRIES: process.env.GOVBR_API_MAX_RETRIES,
+    PORTAL_RATE_LIMIT_DAY_PER_MIN: process.env.PORTAL_RATE_LIMIT_DAY_PER_MIN,
+    PORTAL_RATE_LIMIT_NIGHT_PER_MIN: process.env.PORTAL_RATE_LIMIT_NIGHT_PER_MIN,
     COMPRAS_GOV_API_BASE_URL: process.env.COMPRAS_GOV_API_BASE_URL,
     COMPRAS_GOV_API_TIMEOUT_MS: process.env.COMPRAS_GOV_API_TIMEOUT_MS,
     COMPRAS_GOV_MAX_RETRIES: process.env.COMPRAS_GOV_MAX_RETRIES,

@@ -28,8 +28,11 @@ import { SqliteUserUasgRepository } from "./db/user-uasg-repository.js";
 import { SqliteSyncRepository } from "./db/sync-repository.js";
 import { SqliteSyncJobRepository } from "./db/sync-job-repository.js";
 import { SqliteRateLimitRepository } from "./db/rate-limit-repository.js";
+import { SqlitePortalDataRepository } from "./db/portal-data-repository.js";
 import { SyncQuotaService } from "./services/sync-quota.js";
 import { SyncJobRunner } from "./services/sync-job-runner.js";
+import { PortalDataSyncService } from "./services/portal-data-sync.js";
+import { createPortalSyncRoutes } from "./routes/portal-sync.js";
 import { healthRoute } from "./routes/health.js";
 import { versionRoute } from "./routes/version.js";
 import { resolvePublicDir } from "./static/public-dir.js";
@@ -75,6 +78,7 @@ export async function createApp(env: Env) {
   const syncRepository = new SqliteSyncRepository(db);
   const syncJobRepository = new SqliteSyncJobRepository(db);
   const rateLimitRepository = new SqliteRateLimitRepository(db);
+  const portalDataRepository = new SqlitePortalDataRepository(db);
 
   const cache = new InMemoryCacheStore<unknown>({
     maxEntries: env.CACHE_MAX_ENTRIES,
@@ -85,6 +89,9 @@ export async function createApp(env: Env) {
     baseUrl: env.GOVBR_API_BASE_URL,
     apiKey: env.GOVBR_API_KEY,
     timeoutMs: env.GOVBR_API_TIMEOUT_MS,
+    maxRetries: env.GOVBR_API_MAX_RETRIES,
+    rateLimitDayPerMin: env.PORTAL_RATE_LIMIT_DAY_PER_MIN,
+    rateLimitNightPerMin: env.PORTAL_RATE_LIMIT_NIGHT_PER_MIN,
   });
 
   // Always boot at the configured floor — a stale persisted bump from a
@@ -116,13 +123,24 @@ export async function createApp(env: Env) {
     comprasGovClient,
     portalClient,
   );
+  const portalDataSyncService = new PortalDataSyncService(
+    portalDataRepository,
+    portalClient,
+    syncRepository,
+  );
   const quotaService = new SyncQuotaService(
     syncJobRepository,
     env.SYNC_JOBS_PER_MONTH,
   );
-  const jobRunner = new SyncJobRunner(syncJobRepository, syncService, fastify.log, {
-    pollIntervalMs: env.SYNC_WORKER_POLL_MS,
-  });
+  const jobRunner = new SyncJobRunner(
+    syncJobRepository,
+    syncService,
+    portalDataSyncService,
+    fastify.log,
+    {
+      pollIntervalMs: env.SYNC_WORKER_POLL_MS,
+    },
+  );
   jobRunner.start();
   fastify.addHook("onClose", async () => {
     await jobRunner.stop();
@@ -164,6 +182,15 @@ export async function createApp(env: Env) {
       syncService,
       jobRepository: syncJobRepository,
       quotaService,
+    }),
+  );
+  await fastify.register(
+    createPortalSyncRoutes({
+      authService,
+      syncRepository,
+      portalRepository: portalDataRepository,
+      jobRepository: syncJobRepository,
+      portalSyncService: portalDataSyncService,
     }),
   );
 

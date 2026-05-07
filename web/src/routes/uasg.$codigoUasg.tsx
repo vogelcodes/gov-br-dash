@@ -5,7 +5,9 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useArpsSummary, useQuota, useTriggerSync, useUasgJob, useUasgs } from "../api/queries";
+import { arpsApi } from "../api/arps";
 import { ArpSidebar } from "../components/ArpSidebar";
+import { ExportMenu } from "../components/ExportMenu";
 import { KpiStrip } from "../components/KpiStrip";
 import { SyncBadge } from "../components/SyncBadge";
 import { SyncProgressPanel } from "../components/SyncProgressPanel";
@@ -63,21 +65,29 @@ function UasgDashboard() {
               </p>
             </div>
             <div className="ml-auto flex flex-col items-end gap-1">
-              <button
-                type="button"
-                onClick={() => triggerSync.mutate()}
-                disabled={!canSync}
-                className="btn-secondary"
-                title={
-                  jobActive
-                    ? "Sincronização em andamento"
-                    : quota && quota.remaining <= 0
-                      ? `Cota mensal esgotada (${quota.used}/${quota.limit})`
-                      : undefined
-                }
-              >
-                {jobActive ? "Sincronizando…" : "Sincronizar UASG"}
-              </button>
+              <div className="flex items-center gap-3">
+                <ExportMenu
+                  csvUrl={arpsApi.exportUasgUrl(codigoUasg, "csv")}
+                  xlsxUrl={arpsApi.exportUasgUrl(codigoUasg, "xlsx")}
+                  label="Exportar UASG"
+                  disabled={summaries.length === 0}
+                />
+                <button
+                  type="button"
+                  onClick={() => triggerSync.mutate()}
+                  disabled={!canSync}
+                  className="btn-secondary"
+                  title={
+                    jobActive
+                      ? "Sincronização em andamento"
+                      : quota && quota.remaining <= 0
+                        ? `Cota mensal esgotada (${quota.used}/${quota.limit})`
+                        : undefined
+                  }
+                >
+                  {jobActive ? "Sincronizando…" : "Sincronizar UASG"}
+                </button>
+              </div>
               {quota && (
                 <span className="text-[11px] text-slate-500">
                   {quota.remaining}/{quota.limit} sincronizações restantes este mês

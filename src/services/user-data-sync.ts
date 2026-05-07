@@ -441,6 +441,9 @@ export class UserDataSyncService {
     for (const item of items) {
       this.repository.upsertArpItem(numeroControlePncpAta, item);
     }
+    // Compras' quantidadeItens counts historical revisions; reconcile to the
+    // deduped unique-item count so progress checks and UI badges match.
+    this.repository.setArpQuantidadeItens(numeroControlePncpAta, items.length);
     return items.length;
   }
 

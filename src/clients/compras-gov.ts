@@ -275,6 +275,28 @@ interface DateWindow {
   max: string;
 }
 
+/**
+ * Compras returns one row per historical revision of each item — same
+ * (ata, numeroItem) repeated with different dataHoraAtualizacao. Collapse to
+ * the most recent revision per numeroItem so DB row count matches reality.
+ */
+function dedupeItemsByLatestModification(items: ArpItem[]): ArpItem[] {
+  const latest = new Map<string, ArpItem>();
+  for (const item of items) {
+    const key = item.numeroItem;
+    if (key == null) continue;
+    const current = latest.get(key);
+    if (!current || itemModifiedAt(item) > itemModifiedAt(current)) {
+      latest.set(key, item);
+    }
+  }
+  return [...latest.values()];
+}
+
+function itemModifiedAt(item: ArpItem): string {
+  return item.dataHoraAtualizacao ?? item.dataHoraInclusao ?? "";
+}
+
 const CONSULTAR_ARP_ENDPOINT = "/modulo-arp/1.2_consultarARP_FimVigencia";
 const CONSULTAR_ARP_ITEM_ENDPOINT = "/modulo-arp/2.1_consultarARPItem_Id";
 const CONSULTAR_EMPENHOS_SALDO_ITEM_ENDPOINT =
@@ -433,7 +455,7 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
         pagina += 1;
       } while (pagina <= totalPaginas);
 
-      return items;
+      return dedupeItemsByLatestModification(items);
     } catch (error) {
       throw this.mapError("consultarARPItem_Id", error);
     }

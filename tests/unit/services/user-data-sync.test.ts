@@ -74,10 +74,10 @@ function buildService(comprasOverrides: Partial<ComprasGovClient> = {}): BuiltSe
     ...comprasOverrides,
   };
 
-  const portalClient: PortalTransparenciaClient = {
+  const portalClient = {
     getPessoaFisica: vi.fn(),
     getPessoaJuridica: vi.fn().mockResolvedValue({ cnpj: "11111111000191" }),
-  };
+  } as unknown as PortalTransparenciaClient;
 
   const repository = new SqliteSyncRepository(db);
   const service = new UserDataSyncService(repository, comprasClient, portalClient);

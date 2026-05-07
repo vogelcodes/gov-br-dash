@@ -1,11 +1,13 @@
 import { useState } from "react";
 import type { Arp } from "../api/types";
+import { arpsApi } from "../api/arps";
 import { useArpEmpenhos, useArpItems, useRefreshArp } from "../api/queries";
 import { aggregateAta } from "../lib/aggregates";
 import { fmtMoney, fmtNum, pct } from "../lib/format";
 import { ItemCard } from "./ItemCard";
 import { VigenciaTimeline } from "./VigenciaTimeline";
 import { RefreshButton } from "./RefreshButton";
+import { ExportMenu } from "./ExportMenu";
 
 interface Props {
   codigoUasg: string;
@@ -63,15 +65,21 @@ export function ArpDetailPanel({ codigoUasg, arp, jobActive }: Props) {
               {arp.nomeOrgao}
             </span>
           )}
-          {!jobActive && (
-            <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            <ExportMenu
+              csvUrl={arpsApi.exportArpUrl(ata, "csv")}
+              xlsxUrl={arpsApi.exportArpUrl(ata, "xlsx")}
+              label="Exportar ARP"
+              disabled={items.length === 0}
+            />
+            {!jobActive && (
               <RefreshButton
                 onClick={() => refresh.mutate()}
                 isPending={refresh.isPending}
                 title="Atualizar ARP"
               />
-            </div>
-          )}
+            )}
+          </div>
         </div>
         <p className="text-sm text-slate-700 leading-relaxed mb-4 max-w-4xl">
           {arp.objeto || "—"}

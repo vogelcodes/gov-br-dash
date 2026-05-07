@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import type { ArpItem, Empenho, PessoaJuridica } from "../api/types";
 import { aggregateItem } from "../lib/aggregates";
 import { cnpjDigits, fmtCnpj, fmtMoney, fmtNum } from "../lib/format";
@@ -55,7 +56,19 @@ export function ItemCard({
             {item.descricaoItem || "—"}
           </div>
           <div className="text-[11px] text-slate-700 mt-1">
-            <strong>{supplier}</strong>
+            {cnpj ? (
+              <Link
+                to="/uasg/$codigoUasg/cnpj/$niFornecedor"
+                params={{ codigoUasg, niFornecedor: cnpj }}
+                onClick={(e) => e.stopPropagation()}
+                className="font-bold text-govbr-blue hover:underline"
+                title="Ver dados do fornecedor no Portal da Transparência"
+              >
+                {supplier}
+              </Link>
+            ) : (
+              <strong>{supplier}</strong>
+            )}
             {cnpj && ` · CNPJ ${fmtCnpj(cnpj)}`}
           </div>
         </div>

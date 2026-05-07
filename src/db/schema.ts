@@ -96,11 +96,94 @@ export function initializeSchema(db: AppDatabase): void {
     );
     INSERT OR IGNORE INTO rate_limit_state (id, min_interval_ms, updated_at)
     VALUES (1, 1100, '1970-01-01T00:00:00Z');
+
+    CREATE TABLE IF NOT EXISTS portal_empenhos (
+      documento TEXT PRIMARY KEY,
+      cnpj TEXT NOT NULL,
+      ano INTEGER NOT NULL,
+      fase INTEGER NOT NULL,
+      raw_json TEXT NOT NULL,
+      last_synced_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_portal_empenhos_cnpj ON portal_empenhos(cnpj);
+
+    CREATE TABLE IF NOT EXISTS portal_empenho_details (
+      documento TEXT PRIMARY KEY REFERENCES portal_empenhos(documento) ON DELETE CASCADE,
+      raw_json TEXT NOT NULL,
+      last_synced_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS portal_empenho_itens (
+      documento TEXT NOT NULL,
+      sequencial INTEGER NOT NULL,
+      raw_json TEXT NOT NULL,
+      last_synced_at TEXT NOT NULL,
+      PRIMARY KEY (documento, sequencial),
+      FOREIGN KEY (documento) REFERENCES portal_empenhos(documento) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS portal_empenho_historico (
+      documento TEXT NOT NULL,
+      sequencial INTEGER NOT NULL,
+      idx INTEGER NOT NULL,
+      raw_json TEXT NOT NULL,
+      last_synced_at TEXT NOT NULL,
+      PRIMARY KEY (documento, sequencial, idx)
+    );
+
+    CREATE TABLE IF NOT EXISTS portal_documentos_relacionados (
+      documento TEXT NOT NULL,
+      related_documento TEXT NOT NULL,
+      fase INTEGER NOT NULL,
+      raw_json TEXT NOT NULL,
+      last_synced_at TEXT NOT NULL,
+      PRIMARY KEY (documento, related_documento, fase)
+    );
+
+    CREATE TABLE IF NOT EXISTS portal_sancoes (
+      cnpj TEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('ceis','cnep')),
+      idx INTEGER NOT NULL,
+      raw_json TEXT NOT NULL,
+      last_synced_at TEXT NOT NULL,
+      PRIMARY KEY (cnpj, source, idx)
+    );
+
+    CREATE TABLE IF NOT EXISTS portal_contratos (
+      contrato_id TEXT PRIMARY KEY,
+      cnpj TEXT NOT NULL,
+      raw_json TEXT NOT NULL,
+      last_synced_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_portal_contratos_cnpj ON portal_contratos(cnpj);
   `);
 
   // Migrations for existing databases
   const arpCols = db.prepare("PRAGMA table_info(arps)").all() as { name: string }[];
   if (!arpCols.some((c) => c.name === "last_empenhos_synced_at")) {
     db.exec("ALTER TABLE arps ADD COLUMN last_empenhos_synced_at TEXT");
+  }
+
+  const pessoaCols = db
+    .prepare("PRAGMA table_info(pessoas_juridicas)")
+    .all() as { name: string }[];
+  if (!pessoaCols.some((c) => c.name === "last_portal_synced_at")) {
+    db.exec(
+      "ALTER TABLE pessoas_juridicas ADD COLUMN last_portal_synced_at TEXT",
+    );
+  }
+
+  const syncJobCols = db
+    .prepare("PRAGMA table_info(sync_jobs)")
+    .all() as { name: string }[];
+  if (!syncJobCols.some((c) => c.name === "kind")) {
+    db.exec(
+      "ALTER TABLE sync_jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'uasg'",
+    );
+  }
+  if (!syncJobCols.some((c) => c.name === "target_id")) {
+    // For portal-supplier-arp jobs we need to remember the ARP target;
+    // codigo_uasg alone is insufficient.
+    db.exec("ALTER TABLE sync_jobs ADD COLUMN target_id TEXT");
   }
 }

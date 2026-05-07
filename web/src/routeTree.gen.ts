@@ -13,6 +13,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UasgCodigoUasgRouteImport } from './routes/uasg.$codigoUasg'
 import { Route as UasgCodigoUasgIndexRouteImport } from './routes/uasg.$codigoUasg.index'
+import { Route as UasgCodigoUasgCnpjNiFornecedorRouteImport } from './routes/uasg.$codigoUasg.cnpj.$niFornecedor'
 import { Route as UasgCodigoUasgArpAtaRouteImport } from './routes/uasg.$codigoUasg.arp.$ata'
 
 const LoginRoute = LoginRouteImport.update({
@@ -35,6 +36,12 @@ const UasgCodigoUasgIndexRoute = UasgCodigoUasgIndexRouteImport.update({
   path: '/',
   getParentRoute: () => UasgCodigoUasgRoute,
 } as any)
+const UasgCodigoUasgCnpjNiFornecedorRoute =
+  UasgCodigoUasgCnpjNiFornecedorRouteImport.update({
+    id: '/cnpj/$niFornecedor',
+    path: '/cnpj/$niFornecedor',
+    getParentRoute: () => UasgCodigoUasgRoute,
+  } as any)
 const UasgCodigoUasgArpAtaRoute = UasgCodigoUasgArpAtaRouteImport.update({
   id: '/arp/$ata',
   path: '/arp/$ata',
@@ -47,12 +54,14 @@ export interface FileRoutesByFullPath {
   '/uasg/$codigoUasg': typeof UasgCodigoUasgRouteWithChildren
   '/uasg/$codigoUasg/': typeof UasgCodigoUasgIndexRoute
   '/uasg/$codigoUasg/arp/$ata': typeof UasgCodigoUasgArpAtaRoute
+  '/uasg/$codigoUasg/cnpj/$niFornecedor': typeof UasgCodigoUasgCnpjNiFornecedorRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/uasg/$codigoUasg': typeof UasgCodigoUasgIndexRoute
   '/uasg/$codigoUasg/arp/$ata': typeof UasgCodigoUasgArpAtaRoute
+  '/uasg/$codigoUasg/cnpj/$niFornecedor': typeof UasgCodigoUasgCnpjNiFornecedorRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -61,6 +70,7 @@ export interface FileRoutesById {
   '/uasg/$codigoUasg': typeof UasgCodigoUasgRouteWithChildren
   '/uasg/$codigoUasg/': typeof UasgCodigoUasgIndexRoute
   '/uasg/$codigoUasg/arp/$ata': typeof UasgCodigoUasgArpAtaRoute
+  '/uasg/$codigoUasg/cnpj/$niFornecedor': typeof UasgCodigoUasgCnpjNiFornecedorRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -70,8 +80,14 @@ export interface FileRouteTypes {
     | '/uasg/$codigoUasg'
     | '/uasg/$codigoUasg/'
     | '/uasg/$codigoUasg/arp/$ata'
+    | '/uasg/$codigoUasg/cnpj/$niFornecedor'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/uasg/$codigoUasg' | '/uasg/$codigoUasg/arp/$ata'
+  to:
+    | '/'
+    | '/login'
+    | '/uasg/$codigoUasg'
+    | '/uasg/$codigoUasg/arp/$ata'
+    | '/uasg/$codigoUasg/cnpj/$niFornecedor'
   id:
     | '__root__'
     | '/'
@@ -79,6 +95,7 @@ export interface FileRouteTypes {
     | '/uasg/$codigoUasg'
     | '/uasg/$codigoUasg/'
     | '/uasg/$codigoUasg/arp/$ata'
+    | '/uasg/$codigoUasg/cnpj/$niFornecedor'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -117,6 +134,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UasgCodigoUasgIndexRouteImport
       parentRoute: typeof UasgCodigoUasgRoute
     }
+    '/uasg/$codigoUasg/cnpj/$niFornecedor': {
+      id: '/uasg/$codigoUasg/cnpj/$niFornecedor'
+      path: '/cnpj/$niFornecedor'
+      fullPath: '/uasg/$codigoUasg/cnpj/$niFornecedor'
+      preLoaderRoute: typeof UasgCodigoUasgCnpjNiFornecedorRouteImport
+      parentRoute: typeof UasgCodigoUasgRoute
+    }
     '/uasg/$codigoUasg/arp/$ata': {
       id: '/uasg/$codigoUasg/arp/$ata'
       path: '/arp/$ata'
@@ -130,11 +154,13 @@ declare module '@tanstack/react-router' {
 interface UasgCodigoUasgRouteChildren {
   UasgCodigoUasgIndexRoute: typeof UasgCodigoUasgIndexRoute
   UasgCodigoUasgArpAtaRoute: typeof UasgCodigoUasgArpAtaRoute
+  UasgCodigoUasgCnpjNiFornecedorRoute: typeof UasgCodigoUasgCnpjNiFornecedorRoute
 }
 
 const UasgCodigoUasgRouteChildren: UasgCodigoUasgRouteChildren = {
   UasgCodigoUasgIndexRoute: UasgCodigoUasgIndexRoute,
   UasgCodigoUasgArpAtaRoute: UasgCodigoUasgArpAtaRoute,
+  UasgCodigoUasgCnpjNiFornecedorRoute: UasgCodigoUasgCnpjNiFornecedorRoute,
 }
 
 const UasgCodigoUasgRouteWithChildren = UasgCodigoUasgRoute._addFileChildren(

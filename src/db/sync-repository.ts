@@ -158,6 +158,32 @@ export class SqliteSyncRepository {
     }));
   }
 
+  /**
+   * Override `quantidadeItens` on the stored ARP. Compras counts historical
+   * revisions, so its value can exceed the unique-item count we actually
+   * persist. After items sync, call this with the deduped count so the
+   * "items synced" comparison and UI badges match reality.
+   */
+  setArpQuantidadeItens(
+    numeroControlePncpAta: string,
+    quantidadeItens: number,
+  ): void {
+    const row = this.db
+      .prepare(
+        "SELECT raw_json FROM arps WHERE numero_controle_pncp_ata = ?",
+      )
+      .get(numeroControlePncpAta) as { raw_json: string } | undefined;
+    if (!row) return;
+    const arp = JSON.parse(row.raw_json) as Arp;
+    if (arp.quantidadeItens === quantidadeItens) return;
+    arp.quantidadeItens = quantidadeItens;
+    this.db
+      .prepare(
+        "UPDATE arps SET raw_json = ? WHERE numero_controle_pncp_ata = ?",
+      )
+      .run(JSON.stringify(arp), numeroControlePncpAta);
+  }
+
   countItemsByArp(numeroControlePncpAta: string): number {
     const row = this.db
       .prepare(

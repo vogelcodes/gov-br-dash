@@ -6,6 +6,7 @@ import {
 import { authApi } from "./auth";
 import { uasgsApi } from "./uasgs";
 import { arpsApi } from "./arps";
+import { suppliersApi } from "./suppliers";
 
 export const qk = {
   authMe: ["auth", "me"] as const,
@@ -16,6 +17,7 @@ export const qk = {
     ["uasg", codigoUasg, "sync-status"] as const,
   items: (ata: string) => ["arp", ata, "items"] as const,
   empenhos: (ata: string) => ["arp", ata, "empenhos"] as const,
+  supplierPortal: (cnpj: string) => ["supplier", cnpj, "portal"] as const,
 };
 
 // --- Auth ---
@@ -184,5 +186,46 @@ export function useRefreshItem(
       qc.invalidateQueries({ queryKey: qk.empenhos(ata) });
       qc.invalidateQueries({ queryKey: qk.arpsSummary(codigoUasg) });
     },
+  });
+}
+
+// --- Suppliers (Portal da Transparência) ---
+
+export function useSupplierPortalSummary(cnpj: string | undefined) {
+  return useQuery({
+    queryKey: cnpj ? qk.supplierPortal(cnpj) : ["supplier", "noop", "portal"],
+    queryFn: () => suppliersApi.portalSummary(cnpj!),
+    enabled: !!cnpj && cnpj.length === 14,
+  });
+}
+
+export function useRefreshSupplierPessoa(cnpj: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => suppliersApi.refreshPessoa(cnpj),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.supplierPortal(cnpj) });
+    },
+  });
+}
+
+export function useTriggerSupplierPortalSync(cnpj: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => suppliersApi.syncPortal(cnpj),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.supplierPortal(cnpj) });
+    },
+  });
+}
+
+export function useEmpenhoDetail(documento: string | null) {
+  return useQuery({
+    queryKey: documento
+      ? (["empenho", documento, "portal-detail"] as const)
+      : (["empenho", "noop", "portal-detail"] as const),
+    queryFn: () => suppliersApi.empenhoDetail(documento!),
+    enabled: !!documento,
+    staleTime: 5 * 60_000,
   });
 }

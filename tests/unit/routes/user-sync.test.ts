@@ -95,10 +95,10 @@ describe("user-sync routes", () => {
       consultarArpsPorUnidadeGerenciadora: vi.fn().mockResolvedValue([]),
       consultarItensDaArp: vi.fn().mockResolvedValue([]),
     };
-    const portalClient: PortalTransparenciaClient = {
+    const portalClient = {
       getPessoaFisica: vi.fn(),
       getPessoaJuridica: vi.fn(),
-    };
+    } as unknown as PortalTransparenciaClient;
     const syncService = new UserDataSyncService(syncRepository, comprasClient, portalClient);
     const jobRepository = new SqliteSyncJobRepository(db);
     const quotaService = new SyncQuotaService(jobRepository, 10);

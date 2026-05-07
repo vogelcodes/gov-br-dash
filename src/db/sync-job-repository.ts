@@ -8,12 +8,21 @@ export type SyncJobStatus =
   | "failed"
   | "cancelled";
 
-export type SyncJobPhase = "arps" | "items" | "empenhos" | null;
+export type SyncJobPhase =
+  | "arps"
+  | "items"
+  | "empenhos"
+  | "portal-supplier"
+  | null;
+
+export type SyncJobKind = "uasg" | "portal-supplier-uasg" | "portal-supplier-arp";
 
 export interface SyncJob {
   id: string;
   userId: string;
   codigoUasg: string;
+  kind: SyncJobKind;
+  targetId: string | null;
   status: SyncJobStatus;
   phase: SyncJobPhase;
   totalArps: number;
@@ -43,6 +52,8 @@ interface Row {
   id: string;
   user_id: string;
   codigo_uasg: string;
+  kind: SyncJobKind;
+  target_id: string | null;
   status: SyncJobStatus;
   phase: SyncJobPhase;
   total_arps: number;
@@ -62,6 +73,8 @@ function rowToJob(row: Row): SyncJob {
     id: row.id,
     userId: row.user_id,
     codigoUasg: row.codigo_uasg,
+    kind: row.kind ?? "uasg",
+    targetId: row.target_id,
     status: row.status,
     phase: row.phase,
     totalArps: row.total_arps,
@@ -81,15 +94,46 @@ export class SqliteSyncJobRepository {
   constructor(private readonly db: AppDatabase) {}
 
   enqueue(userId: string, codigoUasg: string): SyncJob {
+    return this.enqueueWithKind(userId, codigoUasg, "uasg", null);
+  }
+
+  enqueuePortalSupplierUasg(userId: string, codigoUasg: string): SyncJob {
+    return this.enqueueWithKind(
+      userId,
+      codigoUasg,
+      "portal-supplier-uasg",
+      codigoUasg,
+    );
+  }
+
+  enqueuePortalSupplierArp(
+    userId: string,
+    codigoUasg: string,
+    numeroControlePncpAta: string,
+  ): SyncJob {
+    return this.enqueueWithKind(
+      userId,
+      codigoUasg,
+      "portal-supplier-arp",
+      numeroControlePncpAta,
+    );
+  }
+
+  private enqueueWithKind(
+    userId: string,
+    codigoUasg: string,
+    kind: SyncJobKind,
+    targetId: string | null,
+  ): SyncJob {
     const id = randomUUID();
     const now = new Date().toISOString();
     this.db
       .prepare(
         `INSERT INTO sync_jobs
-          (id, user_id, codigo_uasg, status, created_at)
-         VALUES (?, ?, ?, 'queued', ?)`,
+          (id, user_id, codigo_uasg, kind, target_id, status, created_at)
+         VALUES (?, ?, ?, ?, ?, 'queued', ?)`,
       )
-      .run(id, userId, codigoUasg, now);
+      .run(id, userId, codigoUasg, kind, targetId, now);
     const job = this.findById(id);
     if (!job) throw new Error("failed to enqueue sync job");
     return job;
@@ -195,13 +239,46 @@ export class SqliteSyncJobRepository {
     const monthStart = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
     ).toISOString();
+    // Only UASG syncs count toward the user's monthly quota — portal-supplier
+    // jobs are gated by the Portal API's own per-minute quota instead.
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS count FROM sync_jobs
-         WHERE user_id = ? AND created_at >= ?`,
+         WHERE user_id = ? AND created_at >= ? AND kind = 'uasg'`,
       )
       .get(userId, monthStart) as { count: number };
     return row.count;
+  }
+
+  findActiveForArp(
+    userId: string,
+    numeroControlePncpAta: string,
+  ): SyncJob | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM sync_jobs
+         WHERE user_id = ? AND target_id = ?
+           AND kind = 'portal-supplier-arp'
+           AND status IN ('queued','running')
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(userId, numeroControlePncpAta) as Row | undefined;
+    return row ? rowToJob(row) : null;
+  }
+
+  findLatestForArp(
+    userId: string,
+    numeroControlePncpAta: string,
+  ): SyncJob | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM sync_jobs
+         WHERE user_id = ? AND target_id = ?
+           AND kind = 'portal-supplier-arp'
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(userId, numeroControlePncpAta) as Row | undefined;
+    return row ? rowToJob(row) : null;
   }
 
   /**

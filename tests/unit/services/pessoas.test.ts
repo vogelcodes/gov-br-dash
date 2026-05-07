@@ -4,10 +4,10 @@ import { CachedPessoasService } from "../../../src/services/pessoas.js";
 
 describe("CachedPessoasService", () => {
   it("uses cache for repeated pessoa juridica requests", async () => {
-    const client: PortalTransparenciaClient = {
+    const client = {
       getPessoaJuridica: vi.fn().mockResolvedValue({ cnpj: "11111111000191" }),
       getPessoaFisica: vi.fn().mockResolvedValue({ cpf: "12345678901" }),
-    };
+    } as unknown as PortalTransparenciaClient;
 
     const cache = new InMemoryCacheStore<unknown>({
       defaultTtlSeconds: 60,
@@ -24,10 +24,10 @@ describe("CachedPessoasService", () => {
   });
 
   it("throws when pessoa fisica request has neither cpf nor nis", async () => {
-    const client: PortalTransparenciaClient = {
+    const client = {
       getPessoaJuridica: vi.fn().mockResolvedValue({ cnpj: "11111111000191" }),
       getPessoaFisica: vi.fn().mockResolvedValue({ cpf: "12345678901" }),
-    };
+    } as unknown as PortalTransparenciaClient;
 
     const cache = new InMemoryCacheStore<unknown>();
     const service = new CachedPessoasService(client, cache);
