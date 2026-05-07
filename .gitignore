@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+public/
 
 # Local database files
 data/*.sqlite
@@ -32,3 +33,8 @@ Thumbs.db
 
 # TypeScript cache
 *.tsbuildinfo
+
+.husky
+.tanstack
+
+API-Docs

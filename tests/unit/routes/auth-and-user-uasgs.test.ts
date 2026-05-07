@@ -7,8 +7,10 @@ import { createDatabase } from "../../../src/db/connection.js";
 import { initializeSchema } from "../../../src/db/schema.js";
 import { SqliteAuthRepository } from "../../../src/db/auth-repository.js";
 import { SqliteUserUasgRepository } from "../../../src/db/user-uasg-repository.js";
+import { SqliteSyncJobRepository } from "../../../src/db/sync-job-repository.js";
 import { AuthService } from "../../../src/services/auth.js";
 import { UserUasgService } from "../../../src/services/user-uasgs.js";
+import { SyncQuotaService } from "../../../src/services/sync-quota.js";
 import { createAuthRoutes } from "../../../src/routes/auth.js";
 import { createUserUasgRoutes } from "../../../src/routes/user-uasgs.js";
 import type { UasgClient, Uasg } from "../../../src/clients/compras-gov.js";
@@ -52,17 +54,18 @@ describe("auth and user UASG routes", () => {
       consultarUasg: vi.fn(async (codigoUasg: string) => uasgFixture(codigoUasg)),
     };
     const userUasgService = new UserUasgService(userUasgRepository, uasgClient);
-    const syncUasg = vi.fn().mockResolvedValue(undefined);
+    const jobRepository = new SqliteSyncJobRepository(db);
+    const quotaService = new SyncQuotaService(jobRepository, 10);
     const app = Fastify();
 
     return {
       app,
       uasgClient,
-      syncUasg,
+      jobRepository,
       async ready() {
         await app.register(cookie, { secret: "test-cookie-secret-with-enough-entropy" });
         await app.register(createAuthRoutes({ authService, secureCookies: false }));
-        await app.register(createUserUasgRoutes({ authService, userUasgService, syncService: { syncUasg } as never }));
+        await app.register(createUserUasgRoutes({ authService, userUasgService, jobRepository, quotaService }));
       },
       async close() {
         await app.close();
@@ -143,7 +146,7 @@ describe("auth and user UASG routes", () => {
     await ctx.close();
   });
 
-  it("fires background syncUasg when a UASG is added", async () => {
+  it("enqueues a sync job when a UASG is added", async () => {
     const ctx = buildApp();
     await ctx.ready();
 
@@ -162,31 +165,10 @@ describe("auth and user UASG routes", () => {
     });
 
     expect(response.statusCode).toBe(201);
-    expect(ctx.syncUasg).toHaveBeenCalledWith("160292");
+    const body = response.json() as { uasg: { codigoUasg: string }; job: { codigoUasg: string; status: string } | null };
+    expect(body.job?.codigoUasg).toBe("160292");
+    expect(body.job?.status).toBe("queued");
 
-    await ctx.close();
-  });
-
-  it("does not fail the response when background sync rejects", async () => {
-    const ctx = buildApp();
-    ctx.syncUasg.mockRejectedValueOnce(new Error("sync boom"));
-    await ctx.ready();
-
-    const signup = await ctx.app.inject({
-      method: "POST",
-      url: "/api/auth/signup",
-      payload: { email: "owner2@example.com", password: "correct horse battery" },
-    });
-    const session = signup.cookies[0].value;
-
-    const response = await ctx.app.inject({
-      method: "POST",
-      url: "/api/me/uasgs",
-      cookies: { session },
-      payload: { codigoUasg: "160292" },
-    });
-
-    expect(response.statusCode).toBe(201);
     await ctx.close();
   });
 });

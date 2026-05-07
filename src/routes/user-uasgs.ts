@@ -2,7 +2,11 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import { AuthError, type AuthService } from "../services/auth.js";
 import type { UserUasgService } from "../services/user-uasgs.js";
-import type { UserDataSyncService } from "../services/user-data-sync.js";
+import type { SqliteSyncJobRepository } from "../db/sync-job-repository.js";
+import {
+  QuotaExceededError,
+  type SyncQuotaService,
+} from "../services/sync-quota.js";
 import { authenticate, type AuthenticatedRequest } from "./auth.js";
 
 const linkBodySchema = z.object({ codigoUasg: z.string().min(1) });
@@ -11,7 +15,8 @@ const uasgParamsSchema = z.object({ codigoUasg: z.string().min(1) });
 interface UserUasgRouteDeps {
   authService: AuthService;
   userUasgService: UserUasgService;
-  syncService: UserDataSyncService;
+  jobRepository: SqliteSyncJobRepository;
+  quotaService: SyncQuotaService;
 }
 
 export function createUserUasgRoutes(deps: UserUasgRouteDeps) {
@@ -31,10 +36,17 @@ export function createUserUasgRoutes(deps: UserUasgRouteDeps) {
       }
       try {
         const uasg = await deps.userUasgService.link(user.id, body.data.codigoUasg);
-        deps.syncService.syncUasg(uasg.codigoUasg).catch((err: unknown) => {
-          request.log.error({ err }, "Background UASG sync failed");
-        });
-        return reply.code(201).send({ uasg });
+        // Auto-enqueue the initial sync. Quota failures here are non-fatal:
+        // the link succeeded, the user can retry sync manually.
+        let job = null;
+        try {
+          deps.quotaService.assertCanEnqueue(user.id);
+          job = deps.jobRepository.enqueue(user.id, uasg.codigoUasg);
+        } catch (err) {
+          if (!(err instanceof QuotaExceededError)) throw err;
+          request.log.warn({ err }, "auto-enqueue skipped: quota exhausted");
+        }
+        return reply.code(201).send({ uasg, job });
       } catch (error) {
         return sendUserDataError(reply, error);
       }

@@ -84,6 +84,46 @@ tests/
 
 ---
 
+## 4.1 Sincronização de Dados (UASGs → ARPs → Itens)
+
+A API `compras.gov.br` é instável (timeouts, esgotamento de pool JDBC, 400 intermitentes). A sincronização foi desenhada para tolerar falhas e retomar de onde parou.
+
+### Fluxo
+
+1. Usuário adiciona UASG via `POST /api/me/uasgs` (máx. 3 por usuário).
+2. Rota dispara `syncService.syncUasg(codigoUasg)` em background (fire-and-forget).
+3. `syncUasg` opera em duas fases:
+   - **Fase 1**: busca todos os ARPs do UASG via `consultarArpsPorUnidadeGerenciadora` e persiste cada ARP no SQLite.
+   - **Fase 2**: para cada ARP, busca itens via `consultarItensDaArp` e persiste. **Pula** ARPs cujo número de itens em DB já bate com `arp.quantidadeItens` — torna o retry resumível.
+4. Empenhos e fornecedores (CNPJ) **não** são buscados no auto-sync — pesados demais para a API. Disponíveis sob demanda em `POST /api/me/arps/:pncpAta/items/:item/empenhos/refresh` e `POST /api/me/pessoas-juridicas/:cnpj/refresh`.
+
+### Endpoints de leitura (DB-backed)
+
+- `GET /api/me/uasgs/:codigoUasg/arps` — ARPs já persistidos para o UASG (autenticado, exige link).
+- `GET /api/me/arps/:numeroControlePncpAta/items` — itens já persistidos para o ARP (autenticado, exige ownership).
+
+### Endpoint público com sync em background
+
+- `GET /api/arps/uasg/:codigoUasg` responde com ARPs imediatamente (cache in-memory) e dispara `syncItemsForArps` em background — não bloqueia a resposta.
+
+### Resilência
+
+- **Retries HTTP**: cada chamada usa `withRetry` com backoff exponencial (default 3 retries, 500ms inicial).
+- **User-Agent de browser**: cliente HTTP envia UA Chrome — APIs gov.br às vezes bloqueiam UAs default de bibliotecas.
+- **Resumível**: re-executar `syncUasg` retoma do último ARP incompleto. Idempotente (upserts).
+- **Erros de background não vazam pra resposta**: `.catch` em todas as chamadas fire-and-forget loga e segue.
+
+### Tabelas SQLite envolvidas
+
+- `uasgs` — UASGs cadastradas (referência por FK).
+- `user_uasgs` — link usuário↔UASG (max 3 por usuário).
+- `arps` — ARPs sincronizadas (FK pra `uasgs`).
+- `arp_items` — itens das ARPs (FK pra `arps`).
+- `pessoas_juridicas` — fornecedores (sob demanda).
+- `empenhos` — empenhos de itens (sob demanda).
+
+---
+
 ## 5. Política de Cache para gov.br
 
 Toda integração externa **deve** passar por service/client com cache.

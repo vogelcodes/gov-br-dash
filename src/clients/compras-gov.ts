@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance } from "axios";
-import { withRetry, type RetryOptions } from "../utils/retry.js";
+import type { RetryOptions } from "../utils/retry.js";
 
 export interface Logger {
   warn(obj: Record<string, unknown>, msg: string): void;
@@ -81,6 +81,7 @@ export interface ConsultarArpResponse {
 
 export interface ConsultarArpItemResponse {
   resultado: ArpItem[];
+  totalPaginas?: number;
 }
 
 export interface Uasg {
@@ -119,7 +120,10 @@ export interface ComprasGovClient {
   consultarArpsPorUnidadeGerenciadora(
     codigoUnidadeGerenciadora: string,
   ): Promise<Arp[]>;
-  consultarItensDaArp(numeroControlePncpAta: string): Promise<ArpItem[]>;
+  consultarItensDaArp(
+    numeroControlePncpAta: string,
+    onPage?: (page: number, totalPages: number) => void,
+  ): Promise<ArpItem[]>;
   consultarEmpenhosSaldoItem?(
     numeroAta: string,
     unidadeGerenciadora: string,
@@ -145,8 +149,125 @@ interface HttpComprasGovClientOptions {
   timeoutMs: number;
   maxRetries?: number;
   retryDelayMs?: number;
+  /** Minimum interval between requests in ms. Default 1100. */
+  minRequestIntervalMs?: number;
+  /** Floor used by the adaptive limiter when decaying after success streaks. */
+  minIntervalFloorMs?: number;
+  /** Ceiling for adaptive bumps after repeated 429s. */
+  minIntervalCeilingMs?: number;
+  /** Called whenever the adaptive interval changes; persist via callback. */
+  onIntervalChange?: (ms: number) => void;
   sleep?: (ms: number) => Promise<void>;
   logger?: Logger;
+}
+
+class RateLimiter {
+  private nextAllowedAt = 0;
+  private currentIntervalMs: number;
+  private successStreak = 0;
+
+  constructor(
+    initialIntervalMs: number,
+    private readonly floorMs: number,
+    private readonly ceilingMs: number,
+    private readonly sleep: (ms: number) => Promise<void>,
+    private readonly onChange?: (ms: number) => void,
+  ) {
+    this.currentIntervalMs = Math.min(
+      Math.max(initialIntervalMs, floorMs),
+      ceilingMs,
+    );
+  }
+
+  get intervalMs(): number {
+    return this.currentIntervalMs;
+  }
+
+  async acquire(): Promise<void> {
+    const now = Date.now();
+    const wait = Math.max(0, this.nextAllowedAt - now);
+    this.nextAllowedAt =
+      Math.max(now, this.nextAllowedAt) + this.currentIntervalMs;
+    if (wait > 0) await this.sleep(wait);
+  }
+
+  /** Pause the limiter so the next acquire() blocks for at least `ms`. */
+  pauseFor(ms: number): void {
+    const target = Date.now() + ms;
+    if (target > this.nextAllowedAt) this.nextAllowedAt = target;
+  }
+
+  /** Called after a 429 — bump interval upward, reset success streak. */
+  onThrottled(): void {
+    this.successStreak = 0;
+    const next = Math.min(
+      this.ceilingMs,
+      Math.round(this.currentIntervalMs * 1.25),
+    );
+    if (next !== this.currentIntervalMs) {
+      this.currentIntervalMs = next;
+      this.onChange?.(next);
+    }
+  }
+
+  /** Called after a non-429 success — decay 25% toward floor every 10 wins. */
+  onSuccess(): void {
+    this.successStreak += 1;
+    if (this.successStreak < 10) return;
+    this.successStreak = 0;
+    const next = Math.max(
+      this.floorMs,
+      Math.round(this.currentIntervalMs * 0.75),
+    );
+    if (next !== this.currentIntervalMs) {
+      this.currentIntervalMs = next;
+      this.onChange?.(next);
+    }
+  }
+}
+
+function parseRetryAfterMs(error: unknown): number | null {
+  if (!axios.isAxiosError(error) || error.response?.status !== 429) return null;
+  const headerVal = error.response.headers?.["retry-after"];
+  if (typeof headerVal === "string" && /^\d+$/.test(headerVal)) {
+    return Number(headerVal) * 1000;
+  }
+  const bodyMsg =
+    typeof error.response.data === "object" &&
+    error.response.data !== null &&
+    "message" in error.response.data &&
+    typeof (error.response.data as { message: unknown }).message === "string"
+      ? ((error.response.data as { message: string }).message)
+      : "";
+  const m = bodyMsg.match(/(\d+)\s*second/i);
+  if (m) return Number(m[1]) * 1000;
+  return 1000;
+}
+
+/**
+ * Detects upstream transient failures that masquerade as 4xx/5xx but really
+ * mean "back off and retry": Hikari pool exhaustion, 502/503/504, JDBC
+ * timeouts. Treated like a 429 — bump adaptive interval, retry indefinitely.
+ */
+function parseTransientBackoffMs(error: unknown): number | null {
+  if (!axios.isAxiosError(error)) return null;
+  const status = error.response?.status;
+  if (status === 502 || status === 503 || status === 504) return 2000;
+  const body = error.response?.data;
+  const text =
+    typeof body === "string"
+      ? body
+      : typeof body === "object" && body !== null && "message" in body
+        ? String((body as { message: unknown }).message ?? "")
+        : "";
+  if (
+    /HikariPool|Connection is not available|JDBC Connection|connection.*timed out/i.test(
+      text,
+    )
+  ) {
+    return 2000;
+  }
+  return null;
 }
 
 interface DateWindow {
@@ -165,6 +286,8 @@ const QUANTIDADE_ANOS_VIGENCIA_FINAL = 2;
 export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
   private readonly http: AxiosInstance;
   private readonly retry: RetryOptions;
+  private readonly limiter: RateLimiter;
+  private readonly logger?: Logger;
 
   constructor(options: HttpComprasGovClientOptions) {
     this.http = axios.create({
@@ -176,13 +299,66 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
         Accept: "application/json, text/plain, */*",
       },
     });
+    const sleep =
+      options.sleep ??
+      ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     this.retry = {
       maxRetries: options.maxRetries ?? 0,
       delayMs: options.retryDelayMs ?? 500,
-      sleep: options.sleep,
+      sleep,
     };
+    const initialInterval = options.minRequestIntervalMs ?? 1100;
+    this.limiter = new RateLimiter(
+      initialInterval,
+      options.minIntervalFloorMs ?? initialInterval,
+      options.minIntervalCeilingMs ?? 5000,
+      sleep,
+      options.onIntervalChange,
+    );
+    this.logger = options.logger;
     if (options.logger && this.http.interceptors?.response) {
       this.setupLogging(options.logger);
+    }
+  }
+
+  /**
+   * Execute an HTTP request through the global rate limiter, with 429-aware
+   * retry: when compras.gov returns 429, parse the "Try again in N seconds"
+   * hint (or Retry-After header), pause the limiter accordingly, and retry.
+   */
+  private async request<T>(fn: () => Promise<T>): Promise<T> {
+    // 429s retry indefinitely while feeding the adaptive limiter — that's
+    // how the worker finds the sweet spot. Other errors bubble up.
+    let attempt = 0;
+    // Cap the non-429 attempt count via maxRetries; 429s don't consume it.
+    let nonThrottleAttempts = 0;
+    const maxNonThrottle = this.retry.maxRetries + 1;
+    for (;;) {
+      attempt += 1;
+      await this.limiter.acquire();
+      try {
+        const result = await fn();
+        this.limiter.onSuccess();
+        return result;
+      } catch (error) {
+        const retryAfter =
+          parseRetryAfterMs(error) ?? parseTransientBackoffMs(error);
+        if (retryAfter == null) {
+          nonThrottleAttempts += 1;
+          if (nonThrottleAttempts >= maxNonThrottle) throw error;
+          continue;
+        }
+        this.limiter.pauseFor(retryAfter + 250);
+        this.limiter.onThrottled();
+        this.logger?.warn(
+          {
+            retryAfterMs: retryAfter,
+            attempt,
+            newIntervalMs: this.limiter.intervalMs,
+          },
+          "Compras.gov.br transient — bumping adaptive interval, retrying",
+        );
+      }
     }
   }
 
@@ -198,6 +374,9 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
               fullUrl: error.request?._currentUrl ?? error.config?.url,
               status: error.response?.status,
               body: error.response?.data,
+              code: error.code,
+              errno: (error as { errno?: number }).errno,
+              message: error.message,
             },
             "Compras.gov.br request failed",
           );
@@ -228,16 +407,33 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
     }
   }
 
-  async consultarItensDaArp(numeroControlePncpAta: string): Promise<ArpItem[]> {
+  async consultarItensDaArp(
+    numeroControlePncpAta: string,
+    onPage?: (page: number, totalPages: number) => void,
+  ): Promise<ArpItem[]> {
     try {
-      const { data } = await withRetry(
-        () =>
+      const items: ArpItem[] = [];
+      let pagina = 1;
+      let totalPaginas = 1;
+
+      do {
+        const { data } = await this.request(() =>
           this.http.get<ConsultarArpItemResponse>(CONSULTAR_ARP_ITEM_ENDPOINT, {
-            params: { numeroControlePncpAta },
+            params: {
+              numeroControlePncpAta,
+              pagina,
+              tamanhoPagina: TAMANHO_PAGINA_MAXIMO,
+            },
           }),
-        this.retry,
-      );
-      return data.resultado;
+        );
+
+        items.push(...data.resultado);
+        totalPaginas = data.totalPaginas ?? 1;
+        onPage?.(pagina, totalPaginas);
+        pagina += 1;
+      } while (pagina <= totalPaginas);
+
+      return items;
     } catch (error) {
       throw this.mapError("consultarARPItem_Id", error);
     }
@@ -248,20 +444,18 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
     unidadeGerenciadora: string,
   ): Promise<unknown[]> {
     try {
-      const { data } = await withRetry(
-        () =>
-          this.http.get<{ resultado: unknown[] }>(
-            CONSULTAR_EMPENHOS_SALDO_ITEM_ENDPOINT,
-            {
-              params: {
-                pagina: 1,
-                tamanhoPagina: TAMANHO_PAGINA_MAXIMO,
-                numeroAta,
-                unidadeGerenciadora,
-              },
+      const { data } = await this.request(() =>
+        this.http.get<{ resultado: unknown[] }>(
+          CONSULTAR_EMPENHOS_SALDO_ITEM_ENDPOINT,
+          {
+            params: {
+              pagina: 1,
+              tamanhoPagina: TAMANHO_PAGINA_MAXIMO,
+              numeroAta,
+              unidadeGerenciadora,
             },
-          ),
-        this.retry,
+          },
+        ),
       );
       return data.resultado;
     } catch (error) {
@@ -271,12 +465,10 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
 
   async consultarUasg(codigoUasg: string): Promise<Uasg | null> {
     try {
-      const { data } = await withRetry(
-        () =>
-          this.http.get<ConsultarUasgResponse>(CONSULTAR_UASG_ENDPOINT, {
-            params: { codigoUasg, statusUasg: true, pagina: 1 },
-          }),
-        this.retry,
+      const { data } = await this.request(() =>
+        this.http.get<ConsultarUasgResponse>(CONSULTAR_UASG_ENDPOINT, {
+          params: { codigoUasg, statusUasg: true, pagina: 1 },
+        }),
       );
       return data.resultado[0] ?? null;
     } catch (error) {
@@ -293,18 +485,16 @@ export class HttpComprasGovClient implements ComprasGovClient, UasgClient {
     let totalPaginas = 1;
 
     do {
-      const { data } = await withRetry(
-        () =>
-          this.http.get<ConsultarArpResponse>(CONSULTAR_ARP_ENDPOINT, {
-            params: {
-              pagina,
-              tamanhoPagina: TAMANHO_PAGINA_MAXIMO,
-              codigoUnidadeGerenciadora,
-              dataVigenciaFinalMin: window.min,
-              dataVigenciaFinalMax: window.max,
-            },
-          }),
-        this.retry,
+      const { data } = await this.request(() =>
+        this.http.get<ConsultarArpResponse>(CONSULTAR_ARP_ENDPOINT, {
+          params: {
+            pagina,
+            tamanhoPagina: TAMANHO_PAGINA_MAXIMO,
+            codigoUnidadeGerenciadora,
+            dataVigenciaFinalMin: window.min,
+            dataVigenciaFinalMax: window.max,
+          },
+        }),
       );
 
       arps.push(...data.resultado);

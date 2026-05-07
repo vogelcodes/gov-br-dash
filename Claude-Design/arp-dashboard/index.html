@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard de ARPs · Portal da Transparência</title>
+<link rel="stylesheet" href="../../colors_and_type.css">
+<style>
+  html,body{margin:0;padding:0;background:#F4F4F4;min-height:100vh;}
+  #app{min-height:100vh;display:flex;flex-direction:column;}
+  .shell{max-width:1440px;margin:0 auto;padding:24px;width:100%;box-sizing:border-box;}
+  .bar{background:#071D41;color:#FFF;padding:10px 24px;font-family:var(--font-sans);font-size:12px;display:flex;align-items:center;gap:16px;}
+  .head{background:#FFF;border-bottom:1px solid #E8E8E8;padding:20px 0;}
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<script src="./data.js"></script>
+<script src="./helpers.js"></script>
+<script type="text/babel" src="./KpiStrip.jsx"></script>
+<script type="text/babel" src="./ArpList.jsx"></script>
+<script type="text/babel" src="./VigenciaTimeline.jsx"></script>
+<script type="text/babel" src="./ItemCard.jsx"></script>
+<script type="text/babel" src="./AtaDetail.jsx"></script>
+
+<script type="text/babel">
+function App() {
+  const data = window.ARP_DATA;
+  const [sel, setSel] = React.useState(() => {
+    const v = parseInt(localStorage.getItem('arp_sel') || '0', 10);
+    return Math.min(Math.max(0, v), data.atas.length - 1);
+  });
+  React.useEffect(() => localStorage.setItem('arp_sel', String(sel)), [sel]);
+
+  return (
+    <div data-screen-label="01 Dashboard ARPs">
+      <div className="bar">
+        <img src="../../assets/govbr-logo-negative.svg" alt="gov.br" style={{height:18}}/>
+        <span style={{opacity:.75}}>/</span>
+        <span style={{letterSpacing:'0.02em'}}>Portal da Transparência</span>
+        <span style={{marginLeft:'auto',opacity:.7}}>UASG {data.uasg} · {data.nomeUnidadeGerenciadora}</span>
+      </div>
+
+      <div className="head">
+        <div className="shell" style={{padding:'0 24px'}}>
+          <div style={{display:'flex',alignItems:'flex-end',gap:20,marginBottom:18}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:'#333',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:4}}>
+                Gestor · Colégio Militar do Rio de Janeiro
+              </div>
+              <h1 style={{fontSize:34.832,fontWeight:600,letterSpacing:'-0.02em',lineHeight:'40px',margin:0}}>
+                Minhas Atas de Registro de Preços
+              </h1>
+              <div style={{fontSize:14,color:'#333',marginTop:6}}>
+                Acompanhe a execução financeira e quantitativa dos itens registrados nas suas ARPs.
+              </div>
+            </div>
+            <div style={{marginLeft:'auto',display:'flex',gap:10}}>
+              <button className="btn btn-secondary"><i className="fas fa-sync"></i>ATUALIZAR</button>
+              <button className="btn btn-primary"><i className="fas fa-file-export"></i>RELATÓRIO COMPLETO</button>
+            </div>
+          </div>
+          <KpiStrip data={data}/>
+        </div>
+      </div>
+
+      <div className="shell" style={{display:'flex',gap:20,alignItems:'flex-start'}}>
+        <ArpList atas={data.atas} selectedIdx={sel} onSelect={setSel}/>
+        <AtaDetail ata={data.atas[sel]}/>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('app')).render(<App/>);
+</script>
+</body>
+</html>

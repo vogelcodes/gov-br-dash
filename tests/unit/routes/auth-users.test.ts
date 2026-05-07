@@ -6,8 +6,10 @@ import { createDatabase } from "../../../src/db/connection.js";
 import { initializeSchema } from "../../../src/db/schema.js";
 import { SqliteAuthRepository } from "../../../src/db/auth-repository.js";
 import { SqliteUserUasgRepository } from "../../../src/db/user-uasg-repository.js";
+import { SqliteSyncJobRepository } from "../../../src/db/sync-job-repository.js";
 import { AuthService } from "../../../src/services/auth.js";
 import { UserUasgService } from "../../../src/services/user-uasgs.js";
+import { SyncQuotaService } from "../../../src/services/sync-quota.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,10 +51,12 @@ describe("auth and user UASG routes", () => {
     const authService = new AuthService(authRepository, { sessionTtlMs: 7 * 24 * 60 * 60 * 1000 });
     const uasgLookup = { consultarUasg: vi.fn().mockResolvedValue(uasgFixture) };
     const userUasgs = new UserUasgService(userUasgRepository, uasgLookup);
+    const jobRepository = new SqliteSyncJobRepository(db);
+    const quotaService = new SyncQuotaService(jobRepository, 10);
     const app = Fastify();
     await app.register(cookie, { secret: "test-secret-with-at-least-32-chars" });
     await app.register(createAuthRoutes({ authService, secureCookies: false }));
-    await app.register(createUserUasgRoutes({ authService, userUasgService: userUasgs, syncService: { syncUasg: vi.fn().mockResolvedValue(undefined) } as never }));
+    await app.register(createUserUasgRoutes({ authService, userUasgService: userUasgs, jobRepository, quotaService }));
     return {
       app,
       db,

@@ -59,6 +59,7 @@ describe("HttpComprasGovClient - consultarUasg", () => {
     const client = new HttpComprasGovClient({
       baseUrl: "https://dadosabertos.compras.gov.br",
       timeoutMs: 5000,
+      minRequestIntervalMs: 0,
     });
 
     const result = await client.consultarUasg("160292");
@@ -81,6 +82,7 @@ describe("HttpComprasGovClient - consultarUasg", () => {
     const client = new HttpComprasGovClient({
       baseUrl: "https://dadosabertos.compras.gov.br",
       timeoutMs: 5000,
+      minRequestIntervalMs: 0,
     });
 
     const result = await client.consultarUasg("999999");
@@ -88,18 +90,38 @@ describe("HttpComprasGovClient - consultarUasg", () => {
     expect(result).toBeNull();
   });
 
-  it("maps upstream errors to ComprasGovApiError", async () => {
-    get.mockRejectedValue({ response: { status: 503, data: { message: "unavailable" } } });
+  it("maps non-transient upstream errors to ComprasGovApiError", async () => {
+    get.mockRejectedValue({ response: { status: 400, data: { message: "bad request" } } });
     vi.mocked(axios.isAxiosError).mockReturnValue(true);
 
     const client = new HttpComprasGovClient({
       baseUrl: "https://dadosabertos.compras.gov.br",
       timeoutMs: 5000,
+      minRequestIntervalMs: 0,
+      maxRetries: 0,
     });
 
     await expect(client.consultarUasg("160292")).rejects.toMatchObject({
       constructor: ComprasGovApiError,
-      statusCode: 503,
+      statusCode: 400,
     });
+  });
+
+  it("retries 503 transient errors and eventually succeeds", async () => {
+    get
+      .mockRejectedValueOnce({ response: { status: 503, data: { message: "unavailable" } } })
+      .mockResolvedValueOnce({ data: { resultado: [], totalRegistros: 0 } });
+    vi.mocked(axios.isAxiosError).mockReturnValue(true);
+
+    const client = new HttpComprasGovClient({
+      baseUrl: "https://dadosabertos.compras.gov.br",
+      timeoutMs: 5000,
+      minRequestIntervalMs: 0,
+      sleep: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const result = await client.consultarUasg("160292");
+    expect(result).toBeNull();
+    expect(get).toHaveBeenCalledTimes(2);
   });
 });

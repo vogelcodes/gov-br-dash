@@ -53,6 +53,7 @@ const envSchema = z.object({
   COMPRAS_GOV_API_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
   COMPRAS_GOV_MAX_RETRIES: z.coerce.number().int().min(0).default(3),
   COMPRAS_GOV_RETRY_DELAY_MS: z.coerce.number().int().positive().default(500),
+  COMPRAS_GOV_MIN_REQUEST_INTERVAL_MS: z.coerce.number().int().min(0).default(1100),
   CACHE_DEFAULT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
   UASG_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
   CACHE_STALE_TTL_SECONDS: z.coerce.number().int().positive().default(120),
@@ -66,6 +67,8 @@ const envSchema = z.object({
     .string()
     .min(32, "COOKIE_SECRET must contain at least 32 characters")
     .default("development-cookie-secret-change-me-32"),
+  SYNC_JOBS_PER_MONTH: z.coerce.number().int().min(0).default(10),
+  SYNC_WORKER_POLL_MS: z.coerce.number().int().positive().default(2000),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -88,6 +91,7 @@ export function loadEnv(): Env {
     COMPRAS_GOV_API_TIMEOUT_MS: process.env.COMPRAS_GOV_API_TIMEOUT_MS,
     COMPRAS_GOV_MAX_RETRIES: process.env.COMPRAS_GOV_MAX_RETRIES,
     COMPRAS_GOV_RETRY_DELAY_MS: process.env.COMPRAS_GOV_RETRY_DELAY_MS,
+    COMPRAS_GOV_MIN_REQUEST_INTERVAL_MS: process.env.COMPRAS_GOV_MIN_REQUEST_INTERVAL_MS,
     CACHE_DEFAULT_TTL_SECONDS: process.env.CACHE_DEFAULT_TTL_SECONDS,
     UASG_CACHE_TTL_SECONDS: process.env.UASG_CACHE_TTL_SECONDS,
     CACHE_STALE_TTL_SECONDS: process.env.CACHE_STALE_TTL_SECONDS,
@@ -98,6 +102,8 @@ export function loadEnv(): Env {
     REDIS_URL: process.env.REDIS_URL,
     SQLITE_DB_PATH: process.env.SQLITE_DB_PATH,
     COOKIE_SECRET: process.env.COOKIE_SECRET,
+    SYNC_JOBS_PER_MONTH: process.env.SYNC_JOBS_PER_MONTH,
+    SYNC_WORKER_POLL_MS: process.env.SYNC_WORKER_POLL_MS,
   };
 
   const result = envSchema.safeParse(raw);

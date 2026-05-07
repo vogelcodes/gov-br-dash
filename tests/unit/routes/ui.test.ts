@@ -8,8 +8,10 @@ import { createDatabase } from "../../../src/db/connection.js";
 import { initializeSchema } from "../../../src/db/schema.js";
 import { SqliteAuthRepository } from "../../../src/db/auth-repository.js";
 import { SqliteUserUasgRepository } from "../../../src/db/user-uasg-repository.js";
+import { SqliteSyncJobRepository } from "../../../src/db/sync-job-repository.js";
 import { AuthService } from "../../../src/services/auth.js";
 import { UserUasgService } from "../../../src/services/user-uasgs.js";
+import { SyncQuotaService } from "../../../src/services/sync-quota.js";
 import { createAuthRoutes } from "../../../src/routes/auth.js";
 import { createUserUasgRoutes } from "../../../src/routes/user-uasgs.js";
 import type { UasgClient, Uasg } from "../../../src/clients/compras-gov.js";
@@ -54,6 +56,7 @@ describe("UI static serving", () => {
       COMPRAS_GOV_API_TIMEOUT_MS: 5000,
       COMPRAS_GOV_MAX_RETRIES: 0,
       COMPRAS_GOV_RETRY_DELAY_MS: 1,
+      COMPRAS_GOV_MIN_REQUEST_INTERVAL_MS: 0,
       CACHE_DEFAULT_TTL_SECONDS: 60,
       CACHE_STALE_TTL_SECONDS: 120,
       CACHE_MAX_ENTRIES: 100,
@@ -63,13 +66,15 @@ describe("UI static serving", () => {
       CORS_ORIGIN: "*",
       COOKIE_SECRET: "test-cookie-secret-with-enough-entropy",
       SQLITE_DB_PATH: join(dir, "test.sqlite"),
+      SYNC_JOBS_PER_MONTH: 10,
+      SYNC_WORKER_POLL_MS: 60000,
     });
 
     try {
       const response = await app.inject({ method: "GET", url: "/" });
       expect(response.statusCode).toBe(200);
       expect(response.headers["content-type"]).toContain("text/html");
-      expect(response.body).toContain("<!DOCTYPE html>");
+      expect(response.body.toLowerCase()).toContain("<!doctype html>");
     } finally {
       await app.close();
       rmSync(dir, { recursive: true, force: true });
@@ -91,6 +96,8 @@ describe("UI static serving", () => {
       ),
     };
     const userUasgService = new UserUasgService(userUasgRepository, uasgClient);
+    const jobRepository = new SqliteSyncJobRepository(db);
+    const quotaService = new SyncQuotaService(jobRepository, 10);
     const app = Fastify();
 
     return {
@@ -107,9 +114,8 @@ describe("UI static serving", () => {
           createUserUasgRoutes({
             authService,
             userUasgService,
-            syncService: {
-              syncUasg: vi.fn().mockResolvedValue(undefined),
-            } as never,
+            jobRepository,
+            quotaService,
           }),
         );
       },

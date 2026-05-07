@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import Fastify from "fastify";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
@@ -25,6 +26,10 @@ import { initializeSchema } from "./db/schema.js";
 import { SqliteAuthRepository } from "./db/auth-repository.js";
 import { SqliteUserUasgRepository } from "./db/user-uasg-repository.js";
 import { SqliteSyncRepository } from "./db/sync-repository.js";
+import { SqliteSyncJobRepository } from "./db/sync-job-repository.js";
+import { SqliteRateLimitRepository } from "./db/rate-limit-repository.js";
+import { SyncQuotaService } from "./services/sync-quota.js";
+import { SyncJobRunner } from "./services/sync-job-runner.js";
 import { healthRoute } from "./routes/health.js";
 import { versionRoute } from "./routes/version.js";
 import { resolvePublicDir } from "./static/public-dir.js";
@@ -68,6 +73,8 @@ export async function createApp(env: Env) {
   const authRepository = new SqliteAuthRepository(db);
   const userUasgRepository = new SqliteUserUasgRepository(db);
   const syncRepository = new SqliteSyncRepository(db);
+  const syncJobRepository = new SqliteSyncJobRepository(db);
+  const rateLimitRepository = new SqliteRateLimitRepository(db);
 
   const cache = new InMemoryCacheStore<unknown>({
     maxEntries: env.CACHE_MAX_ENTRIES,
@@ -80,11 +87,18 @@ export async function createApp(env: Env) {
     timeoutMs: env.GOVBR_API_TIMEOUT_MS,
   });
 
+  // Always boot at the configured floor — a stale persisted bump from a
+  // previous bad day must not slow today's session. Bumps within this run
+  // still get persisted via onIntervalChange (visible in sqlite3 for debug).
+  rateLimitRepository.setMinIntervalMs(env.COMPRAS_GOV_MIN_REQUEST_INTERVAL_MS);
   const comprasGovClient = new HttpComprasGovClient({
     baseUrl: env.COMPRAS_GOV_API_BASE_URL,
     timeoutMs: env.COMPRAS_GOV_API_TIMEOUT_MS,
     maxRetries: env.COMPRAS_GOV_MAX_RETRIES,
     retryDelayMs: env.COMPRAS_GOV_RETRY_DELAY_MS,
+    minRequestIntervalMs: env.COMPRAS_GOV_MIN_REQUEST_INTERVAL_MS,
+    minIntervalFloorMs: env.COMPRAS_GOV_MIN_REQUEST_INTERVAL_MS,
+    onIntervalChange: (ms) => rateLimitRepository.setMinIntervalMs(ms),
     logger: fastify.log,
   });
 
@@ -102,6 +116,17 @@ export async function createApp(env: Env) {
     comprasGovClient,
     portalClient,
   );
+  const quotaService = new SyncQuotaService(
+    syncJobRepository,
+    env.SYNC_JOBS_PER_MONTH,
+  );
+  const jobRunner = new SyncJobRunner(syncJobRepository, syncService, fastify.log, {
+    pollIntervalMs: env.SYNC_WORKER_POLL_MS,
+  });
+  jobRunner.start();
+  fastify.addHook("onClose", async () => {
+    await jobRunner.stop();
+  });
 
   const arpsService = new CachedArpsService(comprasGovClient, cache, {
     cacheTtlSeconds: env.CACHE_DEFAULT_TTL_SECONDS,
@@ -125,15 +150,39 @@ export async function createApp(env: Env) {
     }),
   );
   await fastify.register(
-    createUserUasgRoutes({ authService, userUasgService, syncService }),
+    createUserUasgRoutes({
+      authService,
+      userUasgService,
+      jobRepository: syncJobRepository,
+      quotaService,
+    }),
   );
   await fastify.register(
     createUserSyncRoutes({
       authService,
       userUasgService,
       syncService,
+      jobRepository: syncJobRepository,
+      quotaService,
     }),
   );
+
+  // SPA fallback: any non-API GET that didn't match a static asset gets the
+  // index.html so the client-side router (TanStack Router) can take over.
+  fastify.setNotFoundHandler((request, reply) => {
+    if (request.method !== "GET") {
+      return reply.code(404).send({ message: "Not found" });
+    }
+    const url = request.url.split("?")[0] ?? "";
+    if (
+      url.startsWith("/api/") ||
+      url === "/health" ||
+      url === "/version"
+    ) {
+      return reply.code(404).send({ message: "Not found" });
+    }
+    return reply.sendFile("index.html", join(publicDir));
+  });
 
   return fastify;
 }

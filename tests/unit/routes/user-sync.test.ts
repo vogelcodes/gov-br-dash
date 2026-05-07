@@ -8,9 +8,11 @@ import { initializeSchema } from "../../../src/db/schema.js";
 import { SqliteAuthRepository } from "../../../src/db/auth-repository.js";
 import { SqliteUserUasgRepository } from "../../../src/db/user-uasg-repository.js";
 import { SqliteSyncRepository } from "../../../src/db/sync-repository.js";
+import { SqliteSyncJobRepository } from "../../../src/db/sync-job-repository.js";
 import { AuthService } from "../../../src/services/auth.js";
 import { UserUasgService } from "../../../src/services/user-uasgs.js";
 import { UserDataSyncService } from "../../../src/services/user-data-sync.js";
+import { SyncQuotaService } from "../../../src/services/sync-quota.js";
 import { createAuthRoutes } from "../../../src/routes/auth.js";
 import { createUserUasgRoutes } from "../../../src/routes/user-uasgs.js";
 import { createUserSyncRoutes } from "../../../src/routes/user-sync.js";
@@ -98,17 +100,20 @@ describe("user-sync routes", () => {
       getPessoaJuridica: vi.fn(),
     };
     const syncService = new UserDataSyncService(syncRepository, comprasClient, portalClient);
+    const jobRepository = new SqliteSyncJobRepository(db);
+    const quotaService = new SyncQuotaService(jobRepository, 10);
 
     const app = Fastify();
 
     return {
       app,
       syncRepository,
+      jobRepository,
       async ready() {
         await app.register(cookie, { secret: "test-cookie-secret-with-enough-entropy" });
         await app.register(createAuthRoutes({ authService, secureCookies: false }));
-        await app.register(createUserUasgRoutes({ authService, userUasgService, syncService }));
-        await app.register(createUserSyncRoutes({ authService, userUasgService, syncService }));
+        await app.register(createUserUasgRoutes({ authService, userUasgService, jobRepository, quotaService }));
+        await app.register(createUserSyncRoutes({ authService, userUasgService, syncService, jobRepository, quotaService }));
       },
       async close() {
         await app.close();

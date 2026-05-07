@@ -86,6 +86,61 @@ export class SqliteSyncRepository {
       .run(id, numeroControlePncpAta, numeroItem, JSON.stringify(raw), now);
   }
 
+  markEmpenhosSync(numeroControlePncpAta: string): void {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        "UPDATE arps SET last_empenhos_synced_at = ? WHERE numero_controle_pncp_ata = ?",
+      )
+      .run(now, numeroControlePncpAta);
+  }
+
+  /**
+   * Per-ARP roll-up: ARP metadata + counts and freshness for items + empenhos.
+   * One query so the dashboard sidebar can render accurate badges for every
+   * ARP in a UASG without making N detail requests.
+   */
+  findArpsSummaryByUasg(codigoUasg: string): {
+    arp: Arp;
+    itemCount: number;
+    empenhoCount: number;
+    lastSyncedAt: string;
+    lastItemsSyncedAt: string | null;
+    lastEmpenhosSyncedAt: string | null;
+  }[] {
+    const rows = this.db
+      .prepare(
+        `
+      SELECT
+        a.raw_json,
+        a.last_synced_at,
+        (SELECT COUNT(*) FROM arp_items i WHERE i.numero_controle_pncp_ata = a.numero_controle_pncp_ata) AS item_count,
+        (SELECT COUNT(*) FROM empenhos e WHERE e.numero_controle_pncp_ata = a.numero_controle_pncp_ata) AS empenho_count,
+        (SELECT MAX(i.last_synced_at) FROM arp_items i WHERE i.numero_controle_pncp_ata = a.numero_controle_pncp_ata) AS last_items_synced_at,
+        a.last_empenhos_synced_at
+      FROM arps a
+      WHERE a.codigo_uasg = ?
+      ORDER BY a.last_synced_at DESC
+    `,
+      )
+      .all(codigoUasg) as {
+      raw_json: string;
+      last_synced_at: string;
+      item_count: number;
+      empenho_count: number;
+      last_items_synced_at: string | null;
+      last_empenhos_synced_at: string | null;
+    }[];
+    return rows.map((row) => ({
+      arp: JSON.parse(row.raw_json) as Arp,
+      itemCount: row.item_count,
+      empenhoCount: row.empenho_count,
+      lastSyncedAt: row.last_synced_at,
+      lastItemsSyncedAt: row.last_items_synced_at,
+      lastEmpenhosSyncedAt: row.last_empenhos_synced_at,
+    }));
+  }
+
   findArpsByUasg(codigoUasg: string): StoredArpRecord[] {
     const rows = this.db
       .prepare(
@@ -180,6 +235,56 @@ export class SqliteSyncRepository {
           lastSyncedAt: row.last_synced_at,
         }
       : null;
+  }
+
+  deleteEmpenhosByArp(numeroControlePncpAta: string): void {
+    this.db
+      .prepare("DELETE FROM empenhos WHERE numero_controle_pncp_ata = ?")
+      .run(numeroControlePncpAta);
+  }
+
+  findEmpenhosByArp(
+    numeroControlePncpAta: string,
+  ): { numeroItem: string; raw: unknown; lastSyncedAt: string }[] {
+    const rows = this.db
+      .prepare(
+        "SELECT numero_item, raw_json, last_synced_at FROM empenhos WHERE numero_controle_pncp_ata = ? ORDER BY CAST(numero_item AS INTEGER)",
+      )
+      .all(numeroControlePncpAta) as {
+      numero_item: string;
+      raw_json: string;
+      last_synced_at: string;
+    }[];
+    return rows.map((row) => ({
+      numeroItem: row.numero_item,
+      raw: JSON.parse(row.raw_json) as unknown,
+      lastSyncedAt: row.last_synced_at,
+    }));
+  }
+
+  findPessoasJuridicasByArp(
+    numeroControlePncpAta: string,
+  ): { cnpj: string; raw: unknown; lastSyncedAt: string }[] {
+    const rows = this.db
+      .prepare(
+        `
+      SELECT pj.cnpj, pj.raw_json, pj.last_synced_at
+      FROM pessoas_juridicas pj
+      INNER JOIN arp_items ai ON ai.ni_fornecedor = pj.cnpj
+      WHERE ai.numero_controle_pncp_ata = ?
+      GROUP BY pj.cnpj
+    `,
+      )
+      .all(numeroControlePncpAta) as {
+      cnpj: string;
+      raw_json: string;
+      last_synced_at: string;
+    }[];
+    return rows.map((row) => ({
+      cnpj: row.cnpj,
+      raw: JSON.parse(row.raw_json) as unknown,
+      lastSyncedAt: row.last_synced_at,
+    }));
   }
 
   findPessoaJuridica(cnpj: string): StoredJsonRecord | null {

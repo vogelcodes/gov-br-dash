@@ -41,6 +41,7 @@ describe("HttpComprasGovClient", () => {
     const client = new HttpComprasGovClient({
       baseUrl: "https://dadosabertos.compras.gov.br",
       timeoutMs: 5000,
+      minRequestIntervalMs: 0,
     });
 
     const result = await client.consultarArpsPorUnidadeGerenciadora("160292");
@@ -117,6 +118,7 @@ describe("HttpComprasGovClient", () => {
     const client = new HttpComprasGovClient({
       baseUrl: "https://dadosabertos.compras.gov.br",
       timeoutMs: 5000,
+      minRequestIntervalMs: 0,
     });
 
     const result = await client.consultarArpsPorUnidadeGerenciadora("160292");
@@ -158,6 +160,7 @@ describe("HttpComprasGovClient", () => {
     const client = new HttpComprasGovClient({
       baseUrl: "https://dadosabertos.compras.gov.br",
       timeoutMs: 5000,
+      minRequestIntervalMs: 0,
     });
 
     const result = await client.consultarItensDaArp(
@@ -167,6 +170,8 @@ describe("HttpComprasGovClient", () => {
     expect(get).toHaveBeenCalledWith("/modulo-arp/2.1_consultarARPItem_Id", {
       params: {
         numeroControlePncpAta: "00394452000103-1-018458/2025-000002",
+        pagina: 1,
+        tamanhoPagina: 100,
       },
     });
     expect(result).toEqual([
@@ -194,6 +199,7 @@ describe("HttpComprasGovClient", () => {
     const client = new HttpComprasGovClient({
       baseUrl: "https://dadosabertos.compras.gov.br",
       timeoutMs: 5000,
+      minRequestIntervalMs: 0,
     });
 
     const result = await client.consultarEmpenhosSaldoItem(
@@ -234,6 +240,7 @@ describe("HttpComprasGovClient", () => {
     const client = new HttpComprasGovClient({
       baseUrl: "https://dadosabertos.compras.gov.br",
       timeoutMs: 5000,
+      minRequestIntervalMs: 0,
     });
 
     await expect(

@@ -122,16 +122,22 @@ describe("UserDataSyncService.syncUasg", () => {
     ctx.cleanup();
   });
 
-  it("does not fetch empenhos or suppliers during auto-sync (delegated to refresh endpoints)", async () => {
+  it("fetches empenhos once per ARP during auto-sync; suppliers stay deferred to refresh endpoints", async () => {
     const ctx = buildService({
       consultarArpsPorUnidadeGerenciadora: vi.fn().mockResolvedValue([arpFixture()]),
       consultarItensDaArp: vi.fn().mockResolvedValue([itemFixture()]),
+      consultarEmpenhosSaldoItem: vi.fn().mockResolvedValue([
+        { numeroItem: "1", quantidadeEmpenhada: 5, saldoEmpenho: 0 },
+      ]),
     });
 
     const result = await ctx.service.syncUasg("160292");
 
-    expect(result).toEqual({ arps: 1, items: 1, pessoasJuridicas: 0, empenhos: 0 });
-    expect(ctx.comprasClient.consultarEmpenhosSaldoItem).not.toHaveBeenCalled();
+    expect(result.arps).toBe(1);
+    expect(result.items).toBe(1);
+    expect(result.empenhos).toBe(1);
+    expect(result.pessoasJuridicas).toBe(0);
+    expect(ctx.comprasClient.consultarEmpenhosSaldoItem).toHaveBeenCalledTimes(1);
     expect(ctx.portalClient.getPessoaJuridica).not.toHaveBeenCalled();
     ctx.cleanup();
   });
@@ -211,6 +217,41 @@ describe("UserDataSyncService read methods", () => {
     const items = ctx.service.listItemsForArp("ATA-1");
 
     expect(items.map((i) => i.numeroItem).sort()).toEqual(["1", "2"]);
+    ctx.cleanup();
+  });
+
+  it("listEmpenhosForArp groups stored empenhos by numeroItem", async () => {
+    const ctx = buildService();
+    ctx.repository.upsertArp("160292", arpFixture());
+    ctx.repository.upsertArpItem("ATA-1", itemFixture({ numeroItem: "1" }));
+    ctx.repository.upsertArpItem("ATA-1", itemFixture({ numeroItem: "2" }));
+    ctx.repository.upsertEmpenho("e1", "ATA-1", "1", { quantidadeEmpenhada: 5, saldoEmpenho: 1 });
+    ctx.repository.upsertEmpenho("e2", "ATA-1", "1", { quantidadeEmpenhada: 3, saldoEmpenho: 0 });
+    ctx.repository.upsertEmpenho("e3", "ATA-1", "2", { quantidadeEmpenhada: 7, saldoEmpenho: 2 });
+    ctx.repository.upsertArp("160292", arpFixture({ numeroControlePncpAta: "ATA-OTHER" }));
+    ctx.repository.upsertArpItem("ATA-OTHER", itemFixture({ numeroControlePncpAta: "ATA-OTHER", numeroItem: "1" }));
+    ctx.repository.upsertEmpenho("e4", "ATA-OTHER", "1", { quantidadeEmpenhada: 9 });
+
+    const grouped = ctx.service.listEmpenhosForArp("ATA-1");
+
+    expect(Object.keys(grouped).sort()).toEqual(["1", "2"]);
+    expect(grouped["1"]).toHaveLength(2);
+    expect(grouped["2"]).toHaveLength(1);
+    ctx.cleanup();
+  });
+
+  it("listPessoasJuridicasForArp returns suppliers joined via item ni_fornecedor", async () => {
+    const ctx = buildService();
+    ctx.repository.upsertArp("160292", arpFixture());
+    ctx.repository.upsertArpItem("ATA-1", itemFixture({ numeroItem: "1", niFornecedor: "11.111.111/0001-91" }));
+    ctx.repository.upsertArpItem("ATA-1", itemFixture({ numeroItem: "2", niFornecedor: "22222222000122" }));
+    ctx.repository.upsertPessoaJuridica("11111111000191", { nome: "A" });
+    ctx.repository.upsertPessoaJuridica("22222222000122", { nome: "B" });
+    ctx.repository.upsertPessoaJuridica("33333333000133", { nome: "C" });
+
+    const map = ctx.service.listPessoasJuridicasForArp("ATA-1");
+
+    expect(Object.keys(map).sort()).toEqual(["11111111000191", "22222222000122"]);
     ctx.cleanup();
   });
 });

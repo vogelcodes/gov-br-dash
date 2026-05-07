@@ -17,6 +17,7 @@ describe("UserDataSyncService syncUasgForUser", () => {
       upsertArpItem: vi.fn(),
       upsertPessoaJuridica: vi.fn(),
       upsertEmpenho: vi.fn(),
+      findArpsSummaryByUasg: vi.fn(() => []),
     } as unknown as SqliteSyncRepository;
 
     const mockCompras = {
@@ -46,6 +47,7 @@ describe("UserDataSyncService syncUasgForUser", () => {
       upsertArpItem: vi.fn(),
       upsertPessoaJuridica: vi.fn(),
       upsertEmpenho: vi.fn(),
+      findArpsSummaryByUasg: vi.fn(() => []),
     } as unknown as SqliteSyncRepository;
 
     const mockCompras = {
