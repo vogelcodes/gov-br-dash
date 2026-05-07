@@ -87,12 +87,19 @@ export type SyncJobStatus =
   | "failed"
   | "cancelled";
 
+export type SyncJobPhase =
+  | "arps"
+  | "items"
+  | "empenhos"
+  | "portal-supplier"
+  | null;
+
 export interface SyncJob {
   id: string;
   userId: string;
   codigoUasg: string;
   status: SyncJobStatus;
-  phase: "arps" | "items" | "empenhos" | null;
+  phase: SyncJobPhase;
   totalArps: number;
   processedArps: number;
   failedArps: number;

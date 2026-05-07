@@ -302,12 +302,12 @@ export class SyncJobRunner {
       },
       startSupplier: (cnpj) => {
         merge({ currentArp: cnpj });
-        flush();
+        flush(true);
       },
       supplierDone: () => {
         processed += 1;
         merge({ processedArps: processed });
-        flush();
+        flush(true);
       },
       supplierFailed: (err) => {
         failed += 1;

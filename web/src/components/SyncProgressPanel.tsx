@@ -35,29 +35,39 @@ export function SyncProgressPanel({ job, isPending }: Props) {
   const failed = p?.failedArps ?? 0;
 
   const pastArps = total > 0;
+  const isPortalPhase = phase === "portal-supplier";
   const itemPage = p?.currentArpItemPage;
   const itemTotalPages = p?.currentArpItemTotalPages;
-  const itemsArpDetail = pastArps && phase !== "arps"
-    ? `${done + failed}/${total} ARPs`
-    : undefined;
+  const itemsArpDetail =
+    pastArps && phase !== "arps" && !isPortalPhase
+      ? `${done + failed}/${total} ARPs`
+      : undefined;
   const itemsPageDetail =
     phase === "items" && itemPage != null && itemTotalPages != null && itemTotalPages > 1
       ? `pág. ${itemPage}/${itemTotalPages}`
       : undefined;
+  const cnpjDetail =
+    isPortalPhase && pastArps ? `${done + failed}/${total} CNPJs` : undefined;
+  const cnpjSubDetail =
+    isPortalPhase && p?.currentArp ? formatCnpj(p.currentArp) : undefined;
 
   return (
     <div className="mt-3 bg-white border border-slate-200 rounded-md px-4 py-3 flex flex-col gap-2 min-w-[280px]">
       <PhaseRow
         label="ARPs"
         state={phase === "arps" ? "running" : pastArps ? "done" : "waiting"}
-        detail={pastArps ? `${total} encontradas` : undefined}
+        detail={
+          pastArps && !isPortalPhase ? `${total} encontradas` : undefined
+        }
       />
       <PhaseRow
         label="Itens"
         state={
           phase === "items"
             ? "running"
-            : phase === "empenhos" || (!active && pastArps)
+            : phase === "empenhos" ||
+                isPortalPhase ||
+                (!active && pastArps)
               ? "done"
               : "waiting"
         }
@@ -69,15 +79,27 @@ export function SyncProgressPanel({ job, isPending }: Props) {
         state={
           phase === "empenhos"
             ? "running"
-            : !active && pastArps
+            : isPortalPhase || (!active && pastArps)
               ? "done"
               : "waiting"
         }
         detail={
-          pastArps && (phase === "empenhos" || !active)
+          pastArps && (phase === "empenhos" || !active) && !isPortalPhase
             ? `${done + failed}/${total} ARPs`
             : undefined
         }
+      />
+      <PhaseRow
+        label="CNPJs"
+        state={
+          isPortalPhase
+            ? "running"
+            : !active && pastArps
+              ? "done"
+              : "waiting"
+        }
+        detail={cnpjDetail}
+        subDetail={cnpjSubDetail}
       />
       {(p?.failedArps ?? 0) > 0 && (
         <div className="text-[11px] text-govbr-danger mt-1">
@@ -103,6 +125,12 @@ export function SyncProgressPanel({ job, isPending }: Props) {
       )}
     </div>
   );
+}
+
+function formatCnpj(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length !== 14) return raw;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12, 14)}`;
 }
 
 function formatDuration(sec: number): string {
