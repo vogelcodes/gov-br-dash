@@ -45,8 +45,6 @@ async function proxy(
     reply.code(upstream.status);
     const ct = upstream.headers.get("content-type");
     if (ct) reply.header("content-type", ct);
-    const ce = upstream.headers.get("content-encoding");
-    if (ce) reply.header("content-encoding", ce);
     return reply.send(Buffer.from(await upstream.arrayBuffer()));
   } catch {
     return reply.code(502).send({ message: "PostHog proxy unavailable" });
@@ -54,11 +52,13 @@ async function proxy(
 }
 
 export async function posthogProxyRoute(fastify: FastifyInstance) {
-  fastify.addContentTypeParser(
-    /.*/,
-    { parseAs: "buffer" },
-    (_req, body, done) => done(null, body),
-  );
+  fastify.removeAllContentTypeParsers();
+  fastify.addContentTypeParser(/.*/, (_req, payload, done) => {
+    const chunks: Buffer[] = [];
+    payload.on("data", (c: Buffer) => chunks.push(c));
+    payload.on("end", () => done(null, Buffer.concat(chunks)));
+    payload.on("error", (err) => done(err));
+  });
   fastify.all("/ingest/static/*", (req, rep) =>
     proxy(POSTHOG_ASSETS_HOST, req, rep),
   );
