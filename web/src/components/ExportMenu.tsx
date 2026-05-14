@@ -1,3 +1,5 @@
+import { usePostHog } from "posthog-js/react";
+
 interface Props {
   csvUrl: string;
   xlsxUrl: string;
@@ -11,6 +13,7 @@ export function ExportMenu({
   label = "Exportar",
   disabled,
 }: Props) {
+  const posthog = usePostHog();
   const baseClass =
     "text-sm px-3 py-1 rounded border border-govbr-blue text-govbr-blue hover:bg-govbr-lightblue disabled:opacity-50 disabled:cursor-not-allowed";
   if (disabled) {
@@ -33,10 +36,24 @@ export function ExportMenu({
       <span className="text-[11px] uppercase tracking-wider text-slate-700 self-center mr-1">
         {label}
       </span>
-      <a className={baseClass} href={csvUrl} download>
+      <a
+        className={baseClass}
+        href={csvUrl}
+        download
+        onClick={() =>
+          posthog.capture("uasg_export_downloaded", { format: "csv", label })
+        }
+      >
         CSV
       </a>
-      <a className={baseClass} href={xlsxUrl} download>
+      <a
+        className={baseClass}
+        href={xlsxUrl}
+        download
+        onClick={() =>
+          posthog.capture("uasg_export_downloaded", { format: "xlsx", label })
+        }
+      >
         XLSX
       </a>
     </div>

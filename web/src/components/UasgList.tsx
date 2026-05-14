@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { usePostHog } from "posthog-js/react";
 import { useAddUasg, useRemoveUasg, useUasgs } from "../api/queries";
 import { ApiError } from "../api/client";
 
@@ -7,6 +8,7 @@ export function UasgList() {
   const { data, isLoading } = useUasgs();
   const add = useAddUasg();
   const remove = useRemoveUasg();
+  const posthog = usePostHog();
   const [codigo, setCodigo] = useState("");
   const [error, setError] = useState<string | null>(null);
   const list = data?.uasgs ?? [];
@@ -19,7 +21,10 @@ export function UasgList() {
       return;
     }
     add.mutate(value, {
-      onSuccess: () => setCodigo(""),
+      onSuccess: () => {
+        posthog.capture("uasg_added", { codigo_uasg: value });
+        setCodigo("");
+      },
       onError: (err) => {
         if (err instanceof ApiError) setError(err.message);
         else setError("Erro ao adicionar UASG.");
@@ -97,7 +102,10 @@ export function UasgList() {
             </Link>
             <button
               type="button"
-              onClick={() => remove.mutate(u.codigoUasg)}
+              onClick={() => {
+                posthog.capture("uasg_removed", { codigo_uasg: u.codigoUasg });
+                remove.mutate(u.codigoUasg);
+              }}
               disabled={remove.isPending}
               className="text-red-700 px-2 py-1 text-sm hover:bg-red-50 rounded"
               aria-label="Remover"

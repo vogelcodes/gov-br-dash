@@ -19,6 +19,14 @@ export function SyncBadge({ codigoUasg }: { codigoUasg: string }) {
       </span>
     );
   }
+  if (job.status === "interrupted") {
+    return (
+      <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] tracking-wider bg-amber-50 border border-amber-200">
+        <span className="w-2 h-2 rounded-full bg-amber-500" />
+        Servidor reiniciado · retomando…
+      </span>
+    );
+  }
   if (job.status === "failed" || job.failedArps > 0) {
     return (
       <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] tracking-wider bg-govbr-danger/30 border border-red-300/40">

@@ -3,6 +3,8 @@ import type { ArpSummary } from "../api/types";
 import { fmtMoney, fmtNum } from "../lib/format";
 import { useRefreshArp } from "../api/queries";
 import { RefreshButton } from "./RefreshButton";
+import { pickWorst, staleness } from "../lib/staleness";
+import { StaleBadge, staleTintClass } from "./StaleBadge";
 
 interface Props {
   codigoUasg: string;
@@ -61,8 +63,23 @@ function SidebarRow({
   active: boolean;
   jobActive?: boolean;
 }) {
-  const { arp, itemCount, expectedItems, lastEmpenhosSyncedAt } = summary;
+  const {
+    arp,
+    itemCount,
+    expectedItems,
+    lastSyncedAt,
+    lastItemsSyncedAt,
+    lastEmpenhosSyncedAt,
+  } = summary;
   const refresh = useRefreshArp(codigoUasg, arp.numeroControlePncpAta);
+
+  const staleLevel = pickWorst(
+    staleness(lastSyncedAt, "arp"),
+    staleness(lastItemsSyncedAt, "item"),
+    staleness(lastEmpenhosSyncedAt, "empenho"),
+  );
+  const staleTooltipDate =
+    lastEmpenhosSyncedAt ?? lastItemsSyncedAt ?? lastSyncedAt;
 
   const itemsExpected = expectedItems ?? 0;
   const itemsComplete =
@@ -87,7 +104,9 @@ function SidebarRow({
   }
 
   const linkClasses = `block px-4 py-3 border-b border-slate-100 cursor-pointer border-l-[3px] hover:bg-slate-50 ${
-    active ? "bg-govbr-lightblue border-l-govbr-blue" : "border-l-transparent"
+    active
+      ? "bg-govbr-lightblue border-l-govbr-blue"
+      : `border-l-transparent ${staleTintClass(staleLevel)}`
   } `;
 
   return (
@@ -96,6 +115,7 @@ function SidebarRow({
       params={{ codigoUasg, ata: arp.numeroControlePncpAta }}
       className={linkClasses}
       aria-disabled={blurred || undefined}
+      resetScroll={false}
     >
       <div className="flex justify-between items-baseline mb-1">
         <div
@@ -105,15 +125,21 @@ function SidebarRow({
         >
           ARP {arp.numeroAtaRegistroPreco}
         </div>
-        {!jobActive && (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {!jobActive && (
             <RefreshButton
               onClick={() => refresh.mutate()}
               isPending={refresh.isPending}
-              title="Atualizar esta ARP"
+              title={
+                staleLevel === "fresh"
+                  ? "Dados atualizados"
+                  : "Atualizar esta ARP"
+              }
+              disabled={staleLevel === "fresh"}
             />
-          </div>
-        )}
+          )}
+          <StaleBadge level={staleLevel} lastChangedAt={staleTooltipDate} />
+        </div>
       </div>
       <div className="text-xs text-slate-700 mb-2 line-clamp-2">
         {arp.objeto || "—"}
@@ -122,7 +148,11 @@ function SidebarRow({
         <span>{fmtMoney(arp.valorTotal)}</span>
         <span>{fmtNum(arp.quantidadeItens)} itens</span>
       </div>
-      <div className={`text-[10px] mt-1 ${status.color}`}>{status.text}</div>
+      {status.text !== "Sincronizado" ? (
+        <div className={`text-[10px] mt-1 ${status.color}`}>{status.text}</div>
+      ) : (
+        ""
+      )}
     </Link>
   );
 }

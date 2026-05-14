@@ -51,12 +51,14 @@ export class SqliteUserUasgRepository {
     const now = new Date().toISOString();
     const insert = this.db.transaction(() => {
       this.db.prepare(`
-        INSERT INTO uasgs (codigo_uasg, nome_uasg, raw_json, last_synced_at)
-        VALUES (@codigoUasg, @nomeUasg, @rawJson, @lastSyncedAt)
+        INSERT INTO uasgs (codigo_uasg, nome_uasg, raw_json, last_synced_at, last_changed_at)
+        VALUES (@codigoUasg, @nomeUasg, @rawJson, @lastSyncedAt, @lastSyncedAt)
         ON CONFLICT(codigo_uasg) DO UPDATE SET
           nome_uasg = excluded.nome_uasg,
           raw_json = excluded.raw_json,
-          last_synced_at = excluded.last_synced_at
+          last_synced_at = excluded.last_synced_at,
+          last_changed_at = CASE WHEN raw_json = excluded.raw_json
+            THEN last_changed_at ELSE excluded.last_synced_at END
       `).run({
         codigoUasg: uasg.codigoUasg,
         nomeUasg: uasg.nomeUasg,

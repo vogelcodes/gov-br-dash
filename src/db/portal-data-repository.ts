@@ -1,6 +1,24 @@
 import type { AppDatabase } from "./connection.js";
 import { normalizeDigits } from "./sync-repository.js";
 
+const DB_TIMING_ENABLED = process.env.DEBUG_DB_TIMING === "1";
+const DB_TIMING_THRESHOLD_MS = Number(
+  process.env.DEBUG_DB_TIMING_MS ?? "50",
+);
+
+function timed<T>(label: string, rowCount: number, fn: () => T): T {
+  if (!DB_TIMING_ENABLED) return fn();
+  const start = performance.now();
+  const result = fn();
+  const ms = performance.now() - start;
+  if (ms >= DB_TIMING_THRESHOLD_MS) {
+    console.warn(
+      `[db-timing] ${label} rows=${rowCount} ${ms.toFixed(1)}ms`,
+    );
+  }
+  return result;
+}
+
 export interface PortalEmpenhoRow {
   documento: string;
   cnpj: string;
@@ -68,6 +86,47 @@ export class SqlitePortalDataRepository {
       );
   }
 
+  /**
+   * Bulk upsert empenhos in one transaction. Faster than calling
+   * upsertEmpenho in a loop (single prepared statement, single fsync) and —
+   * critically — caller can `await` between batches to keep the Fastify
+   * event loop responsive while a sync job is running. See
+   * tests/integration/sync-responsiveness.test.ts.
+   */
+  bulkUpsertEmpenhos(
+    rows: { documento: string; cnpj: string; ano: number; fase: number; raw: unknown }[],
+  ): void {
+    if (rows.length === 0) return;
+    const now = new Date().toISOString();
+    const insert = this.db.prepare(
+      `INSERT INTO portal_empenhos (documento, cnpj, ano, fase, raw_json, last_synced_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(documento) DO UPDATE SET
+         cnpj = excluded.cnpj,
+         ano = excluded.ano,
+         fase = excluded.fase,
+         raw_json = excluded.raw_json,
+         last_synced_at = excluded.last_synced_at`,
+    );
+    const tx = this.db.transaction(
+      (
+        items: { documento: string; cnpj: string; ano: number; fase: number; raw: unknown }[],
+      ) => {
+        for (const r of items) {
+          insert.run(
+            r.documento,
+            normalizeDigits(r.cnpj) ?? r.cnpj,
+            r.ano,
+            r.fase,
+            JSON.stringify(r.raw),
+            now,
+          );
+        }
+      },
+    );
+    timed("bulkUpsertEmpenhos", rows.length, () => tx(rows));
+  }
+
   upsertEmpenhoDetail(documento: string, raw: unknown): void {
     const now = new Date().toISOString();
     this.db
@@ -98,7 +157,7 @@ export class SqlitePortalDataRepository {
         insert.run(documento, seq, JSON.stringify(row), now);
       });
     });
-    tx(itens);
+    timed("replaceEmpenhoItens", itens.length, () => tx(itens));
   }
 
   replaceItemHistorico(
@@ -121,7 +180,7 @@ export class SqlitePortalDataRepository {
         insert.run(documento, sequencial, idx, JSON.stringify(row), now);
       });
     });
-    tx(entries);
+    timed("replaceItemHistorico", entries.length, () => tx(entries));
   }
 
   replaceDocumentosRelacionados(
@@ -151,7 +210,7 @@ export class SqlitePortalDataRepository {
         );
       });
     });
-    tx(related);
+    timed("replaceDocumentosRelacionados", related.length, () => tx(related));
   }
 
   replaceSancoes(
@@ -175,7 +234,7 @@ export class SqlitePortalDataRepository {
         insert.run(normalizedCnpj, source, idx, JSON.stringify(row), now);
       });
     });
-    tx(list);
+    timed(`replaceSancoes(${source})`, list.length, () => tx(list));
   }
 
   replaceContratos(cnpj: string, list: unknown[]): void {
@@ -194,7 +253,7 @@ export class SqlitePortalDataRepository {
         insert.run(contratoId, normalizedCnpj, JSON.stringify(row), now);
       });
     });
-    tx(list);
+    timed("replaceContratos", list.length, () => tx(list));
   }
 
   markSupplierPortalSync(cnpj: string): void {

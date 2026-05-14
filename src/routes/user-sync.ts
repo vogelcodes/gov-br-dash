@@ -3,11 +3,16 @@ import { z } from "zod";
 import { AuthError, type AuthService } from "../services/auth.js";
 import type { UserDataSyncService } from "../services/user-data-sync.js";
 import type { UserUasgService } from "../services/user-uasgs.js";
-import type { SqliteSyncJobRepository } from "../db/sync-job-repository.js";
+import {
+  BG_PRIORITY_RED,
+  BG_PRIORITY_YELLOW,
+  type SqliteSyncJobRepository,
+} from "../db/sync-job-repository.js";
 import {
   QuotaExceededError,
   type SyncQuotaService,
 } from "../services/sync-quota.js";
+import { staleness } from "../services/staleness.js";
 import { authenticate, type AuthenticatedRequest } from "./auth.js";
 import { sendUserDataError } from "./user-uasgs.js";
 
@@ -78,6 +83,31 @@ export function createUserSyncRoutes(deps: UserSyncRouteDeps) {
           const user = (request as AuthenticatedRequest).user;
           deps.userUasgService.assertOwnsUasg(user.id, params.data.codigoUasg);
           const arps = deps.syncService.listArpSummariesForUasg(params.data.codigoUasg);
+          // Auto-enqueue bg refresh for ARPs whose items/empenhos are stale.
+          // Items have shorter thresholds than ARPs; check both signals.
+          for (const summary of arps) {
+            const arpStale = staleness(summary.lastSyncedAt, "arp");
+            const itemStale = staleness(summary.lastItemsSyncedAt, "item");
+            const empenhoStale = staleness(
+              summary.lastEmpenhosSyncedAt,
+              "empenho",
+            );
+            const worst = pickWorst(arpStale, itemStale, empenhoStale);
+            if (worst === "fresh") continue;
+            try {
+              deps.jobRepository.enqueueBgRefreshArp(
+                user.id,
+                params.data.codigoUasg,
+                summary.arp.numeroControlePncpAta,
+                worst === "red" ? BG_PRIORITY_RED : BG_PRIORITY_YELLOW,
+              );
+            } catch (err) {
+              request.log.warn(
+                { err, arp: summary.arp.numeroControlePncpAta },
+                "failed to enqueue bg-refresh-arp",
+              );
+            }
+          }
           return reply.code(200).send({ arps });
         } catch (error) {
           return sendUserDataError(reply, error);
@@ -302,4 +332,12 @@ function sendRefreshError(reply: FastifyReply, error: unknown) {
   return error instanceof Error && !(error instanceof AuthError)
     ? reply.code(400).send({ message: error.message })
     : sendUserDataError(reply, error);
+}
+
+function pickWorst(
+  ...levels: ("fresh" | "yellow" | "red")[]
+): "fresh" | "yellow" | "red" {
+  if (levels.includes("red")) return "red";
+  if (levels.includes("yellow")) return "yellow";
+  return "fresh";
 }

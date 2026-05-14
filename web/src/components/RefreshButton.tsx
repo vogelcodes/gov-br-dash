@@ -3,6 +3,8 @@ interface Props {
   isPending: boolean;
   title?: string;
   className?: string;
+  disabled?: boolean;
+  hidden?: boolean;
 }
 
 export function RefreshButton({
@@ -10,6 +12,8 @@ export function RefreshButton({
   isPending,
   title = "Atualizar",
   className = "",
+  disabled = false,
+  hidden = false,
 }: Props) {
   return (
     <button
@@ -20,7 +24,9 @@ export function RefreshButton({
         onClick();
       }}
       disabled={isPending}
-      className={`icon-btn ${className} ${isPending ? "animate-pulse-dot" : ""}`}
+      className={`icon-btn ${className} ${
+        disabled ? "hidden" : ""
+      } ${hidden ? "hidden" : ""} ${isPending ? "animate-pulse-dot" : ""}`}
       title={title}
       aria-label={title}
     >

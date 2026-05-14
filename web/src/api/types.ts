@@ -53,6 +53,8 @@ export interface ArpItem {
   valorTotal?: number;
   maximoAdesao?: number;
   numeroControlePncpAta?: string;
+  lastSyncedAt?: string;
+  lastChangedAt?: string | null;
   [key: string]: unknown;
 }
 
@@ -62,8 +64,11 @@ export interface ArpSummary {
   expectedItems: number | null;
   empenhoCount: number;
   lastSyncedAt: string;
+  lastChangedAt: string | null;
   lastItemsSyncedAt: string | null;
+  lastItemsChangedAt: string | null;
   lastEmpenhosSyncedAt: string | null;
+  lastEmpenhosChangedAt: string | null;
 }
 
 export interface SyncProgress {
@@ -85,7 +90,8 @@ export type SyncJobStatus =
   | "running"
   | "done"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "interrupted";
 
 export type SyncJobPhase =
   | "arps"

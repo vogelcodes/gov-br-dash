@@ -24,7 +24,8 @@ export function initializeSchema(db: AppDatabase): void {
       codigo_uasg TEXT PRIMARY KEY,
       nome_uasg TEXT NOT NULL,
       raw_json TEXT NOT NULL,
-      last_synced_at TEXT NOT NULL
+      last_synced_at TEXT NOT NULL,
+      last_changed_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS user_uasgs (
@@ -39,7 +40,8 @@ export function initializeSchema(db: AppDatabase): void {
       codigo_uasg TEXT NOT NULL REFERENCES uasgs(codigo_uasg) ON DELETE CASCADE,
       raw_json TEXT NOT NULL,
       last_synced_at TEXT NOT NULL,
-      last_empenhos_synced_at TEXT
+      last_empenhos_synced_at TEXT,
+      last_changed_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS arp_items (
@@ -48,6 +50,7 @@ export function initializeSchema(db: AppDatabase): void {
       ni_fornecedor TEXT,
       raw_json TEXT NOT NULL,
       last_synced_at TEXT NOT NULL,
+      last_changed_at TEXT,
       PRIMARY KEY (numero_controle_pncp_ata, numero_item)
     );
 
@@ -57,6 +60,7 @@ export function initializeSchema(db: AppDatabase): void {
       numero_item TEXT NOT NULL,
       raw_json TEXT NOT NULL,
       last_synced_at TEXT NOT NULL,
+      last_changed_at TEXT,
       FOREIGN KEY (numero_controle_pncp_ata, numero_item)
         REFERENCES arp_items(numero_controle_pncp_ata, numero_item) ON DELETE CASCADE
     );
@@ -64,7 +68,8 @@ export function initializeSchema(db: AppDatabase): void {
     CREATE TABLE IF NOT EXISTS pessoas_juridicas (
       cnpj TEXT PRIMARY KEY,
       raw_json TEXT NOT NULL,
-      last_synced_at TEXT NOT NULL
+      last_synced_at TEXT NOT NULL,
+      last_changed_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS sync_jobs (
@@ -82,7 +87,8 @@ export function initializeSchema(db: AppDatabase): void {
       last_error TEXT,
       created_at TEXT NOT NULL,
       started_at TEXT,
-      finished_at TEXT
+      finished_at TEXT,
+      priority INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_sync_jobs_user_month
       ON sync_jobs(user_id, created_at);
@@ -185,5 +191,33 @@ export function initializeSchema(db: AppDatabase): void {
     // For portal-supplier-arp jobs we need to remember the ARP target;
     // codigo_uasg alone is insufficient.
     db.exec("ALTER TABLE sync_jobs ADD COLUMN target_id TEXT");
+  }
+
+  // priority lane for sync_jobs: higher numbers run first. User-triggered jobs
+  // get 10, red bg refreshes 5, yellow bg refreshes 1.
+  if (!syncJobCols.some((c) => c.name === "priority")) {
+    db.exec(
+      "ALTER TABLE sync_jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+    );
+  }
+
+  // last_changed_at: bumped on upsert only when raw_json actually differs.
+  // Drives staleness UI + auto-refresh scheduling.
+  for (const table of [
+    "uasgs",
+    "arps",
+    "arp_items",
+    "empenhos",
+    "pessoas_juridicas",
+  ]) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as {
+      name: string;
+    }[];
+    if (!cols.some((c) => c.name === "last_changed_at")) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN last_changed_at TEXT`);
+      db.exec(
+        `UPDATE ${table} SET last_changed_at = last_synced_at WHERE last_changed_at IS NULL`,
+      );
+    }
   }
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePostHog } from "posthog-js/react";
 import { useLogin, useSignup } from "../api/queries";
 import { ApiError } from "../api/client";
 
@@ -8,9 +9,11 @@ export function AuthForm({ onSuccess }: { onSuccess: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const login = useLogin();
   const signup = useSignup();
+  const posthog = usePostHog();
   const isPending = login.isPending || signup.isPending;
 
   const handleError = (err: unknown) => {
+    posthog.captureException(err);
     if (err instanceof ApiError) setError(err.message);
     else if (err instanceof Error) setError(err.message);
     else setError("Erro inesperado");
@@ -26,11 +29,21 @@ export function AuthForm({ onSuccess }: { onSuccess: () => void }) {
       setError("Senha precisa de no mínimo 12 caracteres.");
       return;
     }
+    const trimmedEmail = email.trim();
     const fn = mode === "login" ? login : signup;
-    fn.mutate({ email: email.trim(), password }, {
-      onSuccess: () => onSuccess(),
-      onError: handleError,
-    });
+    fn.mutate(
+      { email: trimmedEmail, password },
+      {
+        onSuccess: () => {
+          posthog.identify(trimmedEmail, { email: trimmedEmail });
+          posthog.capture(
+            mode === "login" ? "user_logged_in" : "user_signed_up",
+          );
+          onSuccess();
+        },
+        onError: handleError,
+      },
+    );
   };
 
   return (

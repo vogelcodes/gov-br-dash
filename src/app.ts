@@ -35,6 +35,7 @@ import { PortalDataSyncService } from "./services/portal-data-sync.js";
 import { createPortalSyncRoutes } from "./routes/portal-sync.js";
 import { healthRoute } from "./routes/health.js";
 import { versionRoute } from "./routes/version.js";
+import { posthogProxyRoute } from "./routes/posthog-proxy.js";
 import { resolvePublicDir } from "./static/public-dir.js";
 
 const publicDir = resolvePublicDir();
@@ -58,6 +59,7 @@ export async function createApp(env: Env) {
   await fastify.register(rateLimit, {
     max: env.RATE_LIMIT_MAX,
     timeWindow: `${env.RATE_LIMIT_WINDOW_SECONDS} seconds`,
+    allowList: (req) => req.url.startsWith("/ingest/"),
   });
 
   await fastify.register(cookie, { secret: env.COOKIE_SECRET });
@@ -154,6 +156,7 @@ export async function createApp(env: Env) {
     cacheTtlSeconds: env.UASG_CACHE_TTL_SECONDS,
   });
 
+  await fastify.register(posthogProxyRoute);
   await fastify.register(healthRoute);
   await fastify.register(versionRoute);
   await fastify.register(createPessoasRoute({ service: pessoasService }));

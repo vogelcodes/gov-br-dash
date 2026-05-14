@@ -122,6 +122,18 @@ A API `compras.gov.br` é instável (timeouts, esgotamento de pool JDBC, 400 int
 - `pessoas_juridicas` — fornecedores (sob demanda).
 - `empenhos` — empenhos de itens (sob demanda).
 
+### Responsividade do servidor durante jobs
+
+O worker `SyncJobRunner` roda **no mesmo processo Node** que serve a API HTTP. `better-sqlite3` é síncrono — cada `run()` bloqueia a event loop até terminar. Loops apertados de upsert (centenas/milhares de empenhos por CNPJ) **starvam a event loop** e travam toda requisição HTTP (incluindo o F5 do browser) até o lote terminar.
+
+Regras para qualquer código que rode dentro do job runner:
+
+1. **Lote em transação**: agrupar N escritas SQLite num único `db.transaction(...)` — um fsync, statement preparado uma vez. Ex.: `SqlitePortalDataRepository.bulkUpsertEmpenhos`.
+2. **Yield entre lotes**: após cada batch (≤500 linhas), `await new Promise(r => setImmediate(r))`. Devolve o controle ao Fastify pra atender requisições intercaladas.
+3. **Nunca um `for` sem `await` sobre um array grande** que faça I/O síncrono (DB, fs, JSON.stringify pesado).
+
+Teste de regressão: `tests/integration/sync-responsiveness.test.ts` mede latência p95 de `GET /health` enquanto um job processa 5k empenhos sintéticos. Falha se p95 > 100ms.
+
 ---
 
 ## 5. Política de Cache para gov.br
@@ -180,31 +192,31 @@ Antes de adicionar qualquer pacote:
 
 ## 7. ENV VARs
 
-| Variável                    | Obrigatório | Padrão        | Descrição                                         |
-| --------------------------- | ----------- | ------------- | ------------------------------------------------- |
-| `NODE_ENV`                  | Sim         | `development` | `development` \| `production` \| `test`           |
-| `PORT`                      | Não         | `3000`        | Porta HTTP                                        |
-| `LOG_LEVEL`                 | Não         | `info`        | `debug` \| `info` \| `warn` \| `error`            |
-| `GOVBR_API_BASE_URL`        | Sim*        | —             | URL base da API gov.br                            |
-| `GOVBR_API_KEY`             | Sim*        | —             | Chave da API Portal da Transparência              |
-| `GOVBR_API_TIMEOUT_MS`      | Não         | `5000`        | Timeout em ms para chamadas upstream              |
-| `COMPRAS_GOV_API_BASE_URL`  | Não         | dadosabertos.compras.gov.br | URL base Compras.gov.br         |
-| `COMPRAS_GOV_API_TIMEOUT_MS`| Não         | `30000`       | Timeout em ms para chamadas Compras.gov.br        |
-| `COMPRAS_GOV_MAX_RETRIES`   | Não         | `3`           | Máximo de retries em falhas transitórias          |
-| `COMPRAS_GOV_RETRY_DELAY_MS`| Não         | `500`         | Delay em ms entre retries                         |
-| `CACHE_DEFAULT_TTL_SECONDS` | Não         | `60`          | TTL padrão do cache                               |
-| `UASG_CACHE_TTL_SECONDS`    | Não         | `86400`       | TTL do cache para dados de UASG (24h)            |
-| `CACHE_STALE_TTL_SECONDS`   | Não         | `120`         | TTL stale do cache                                |
-| `CACHE_MAX_ENTRIES`         | Não         | `10000`       | Máximo de entradas no cache in-memory             |
-| `RATE_LIMIT_MAX`            | Não         | `100`         | Requisições máximas por janela                    |
-| `RATE_LIMIT_WINDOW_SECONDS` | Não         | `60`          | Janela de rate limit em segundos                  |
-| `CORS_ORIGIN`               | Não         | `*`           | Origem permitida para CORS                        |
-| `REDIS_URL`                 | Não         | —             | URL do Redis (futuro; se setado, cache usa Redis) |
-| `SQLITE_DB_PATH`            | Não         | `data/app.sqlite` | Caminho do arquivo SQLite para persistência      |
-| `COOKIE_SECRET`             | Não**       | `dev-default` | Secret para assinar cookies (mín 32 chars)       |
+| Variável                     | Obrigatório | Padrão                      | Descrição                                         |
+| ---------------------------- | ----------- | --------------------------- | ------------------------------------------------- |
+| `NODE_ENV`                   | Sim         | `development`               | `development` \| `production` \| `test`           |
+| `PORT`                       | Não         | `3000`                      | Porta HTTP                                        |
+| `LOG_LEVEL`                  | Não         | `info`                      | `debug` \| `info` \| `warn` \| `error`            |
+| `GOVBR_API_BASE_URL`         | Sim\*       | —                           | URL base da API gov.br                            |
+| `GOVBR_API_KEY`              | Sim\*       | —                           | Chave da API Portal da Transparência              |
+| `GOVBR_API_TIMEOUT_MS`       | Não         | `5000`                      | Timeout em ms para chamadas upstream              |
+| `COMPRAS_GOV_API_BASE_URL`   | Não         | dadosabertos.compras.gov.br | URL base Compras.gov.br                           |
+| `COMPRAS_GOV_API_TIMEOUT_MS` | Não         | `30000`                     | Timeout em ms para chamadas Compras.gov.br        |
+| `COMPRAS_GOV_MAX_RETRIES`    | Não         | `3`                         | Máximo de retries em falhas transitórias          |
+| `COMPRAS_GOV_RETRY_DELAY_MS` | Não         | `500`                       | Delay em ms entre retries                         |
+| `CACHE_DEFAULT_TTL_SECONDS`  | Não         | `60`                        | TTL padrão do cache                               |
+| `UASG_CACHE_TTL_SECONDS`     | Não         | `86400`                     | TTL do cache para dados de UASG (24h)             |
+| `CACHE_STALE_TTL_SECONDS`    | Não         | `120`                       | TTL stale do cache                                |
+| `CACHE_MAX_ENTRIES`          | Não         | `10000`                     | Máximo de entradas no cache in-memory             |
+| `RATE_LIMIT_MAX`             | Não         | `100`                       | Requisições máximas por janela                    |
+| `RATE_LIMIT_WINDOW_SECONDS`  | Não         | `60`                        | Janela de rate limit em segundos                  |
+| `CORS_ORIGIN`                | Não         | `*`                         | Origem permitida para CORS                        |
+| `REDIS_URL`                  | Não         | —                           | URL do Redis (futuro; se setado, cache usa Redis) |
+| `SQLITE_DB_PATH`             | Não         | `data/app.sqlite`           | Caminho do arquivo SQLite para persistência       |
+| `COOKIE_SECRET`              | Não\*\*     | `dev-default`               | Secret para assinar cookies (mín 32 chars)        |
 
 \*Obrigatório quando `NODE_ENV=production`.
-\**Em produção, `COOKIE_SECRET` deve ser um valor aleatório de pelo menos 32 caracteres (`openssl rand -hex 32`).
+\*\*Em produção, `COOKIE_SECRET` deve ser um valor aleatório de pelo menos 32 caracteres (`openssl rand -hex 32`).
 
 ### Validação
 
@@ -268,23 +280,7 @@ npm run verify
 
 ---
 
-## 10. Critérios de Pronto
-
-Antes de marcar PR como pronto:
-
-- [ ] Teste escrito **antes** do código.
-- [ ] Testes passando (`npm test` verde).
-- [ ] Typecheck passando (`npm run typecheck` verde).
-- [ ] Lint passando (`npm run lint` verde).
-- [ ] Security audit sem vulnerabilidades críticas/altas.
-- [ ] Se nova dependência: justification no PR + audit rodado.
-- [ ] Se mudou comportamento: `AGENT.md` ou `README.md` atualizado.
-- [ ] Se novo env var: documentado neste arquivo.
-- [ ] Arquivo único com mais de ~150 linhas? Refatorar antes de commit.
-- [ ] Código duplicado? Extrair para função/módulo.
-- [ ] Se cache foi alterado: testes de hit/miss/TTL atualizados.
-
----
+6
 
 ## 11. Quando Pedir Ajuda ao Humano
 

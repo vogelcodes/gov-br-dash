@@ -97,8 +97,11 @@ export class UserDataSyncService {
     expectedItems: number | null;
     empenhoCount: number;
     lastSyncedAt: string;
+    lastChangedAt: string | null;
     lastItemsSyncedAt: string | null;
+    lastItemsChangedAt: string | null;
     lastEmpenhosSyncedAt: string | null;
+    lastEmpenhosChangedAt: string | null;
   }[] {
     return this.repository
       .findArpsSummaryByUasg(normalizeUasg(codigoUasg))
@@ -108,15 +111,24 @@ export class UserDataSyncService {
         expectedItems: row.arp.quantidadeItens ?? null,
         empenhoCount: row.empenhoCount,
         lastSyncedAt: row.lastSyncedAt,
+        lastChangedAt: row.lastChangedAt,
         lastItemsSyncedAt: row.lastItemsSyncedAt,
+        lastItemsChangedAt: row.lastItemsChangedAt,
         lastEmpenhosSyncedAt: row.lastEmpenhosSyncedAt,
+        lastEmpenhosChangedAt: row.lastEmpenhosChangedAt,
       }));
   }
 
-  listItemsForArp(numeroControlePncpAta: string): ArpItem[] {
+  listItemsForArp(
+    numeroControlePncpAta: string,
+  ): (ArpItem & { lastSyncedAt: string; lastChangedAt: string | null })[] {
     return this.repository
       .findItemsByArp(numeroControlePncpAta)
-      .map((r) => r.raw);
+      .map((r) => ({
+        ...r.raw,
+        lastSyncedAt: r.lastSyncedAt,
+        lastChangedAt: r.lastChangedAt,
+      }));
   }
 
   listEmpenhosForArp(

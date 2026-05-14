@@ -5,6 +5,8 @@ import { cnpjDigits, fmtCnpj, fmtMoney, fmtNum } from "../lib/format";
 import { useRefreshItem } from "../api/queries";
 import { RefreshButton } from "./RefreshButton";
 import { EmpenhoBreakdown } from "./EmpenhoBreakdown";
+import { staleness } from "../lib/staleness";
+import { StaleBadge, staleTintClass } from "./StaleBadge";
 
 interface Props {
   codigoUasg: string;
@@ -31,6 +33,7 @@ export function ItemCard({
 }: Props) {
   const refresh = useRefreshItem(codigoUasg, ata, item.numeroItem);
   const ag = aggregateItem(item, empenhos);
+  const itemStale = staleness(item.lastSyncedAt, "item");
   const riskExec = ag.execPct < 50;
   const cnpj = cnpjDigits(item.niFornecedor);
   const supplier =
@@ -42,7 +45,9 @@ export function ItemCard({
   return (
     <div
       data-item-id={item.numeroItem}
-      className="bg-white border border-slate-200 rounded overflow-hidden"
+      className={`border border-slate-200 rounded overflow-hidden ${
+        staleTintClass(itemStale) || "bg-white"
+      }`}
     >
       <div
         onClick={onToggle}
@@ -106,14 +111,20 @@ export function ItemCard({
             {fmtNum(ag.totalEmp)}/{fmtNum(ag.totalReg)} unid.
           </div>
         </div>
-        <div className="flex items-center gap-1 justify-self-end">
+        <div className="flex items-center gap-1.5 justify-self-end">
           {!jobActive && (
             <RefreshButton
               onClick={() => refresh.mutate()}
               isPending={refresh.isPending}
-              title="Atualizar este item"
+              title={
+                itemStale === "fresh"
+                  ? "Dados atualizados"
+                  : "Atualizar este item"
+              }
+              disabled={itemStale === "fresh"}
             />
           )}
+          <StaleBadge level={itemStale} lastChangedAt={item.lastSyncedAt} />
           <span className="text-govbr-blue text-sm">
             {expanded ? "▴" : "▾"}
           </span>

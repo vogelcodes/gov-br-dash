@@ -26,7 +26,11 @@ export interface PortalSancaoRow {
 }
 
 export interface SupplierPortalSummary {
-  pessoa: { raw: PessoaJuridica; lastSyncedAt: string } | null;
+  pessoa: {
+    raw: PessoaJuridica;
+    lastSyncedAt: string;
+    lastChangedAt: string | null;
+  } | null;
   empenhos: PortalEmpenhoRow[];
   contratos: PortalContratoRow[];
   sancoes: PortalSancaoRow[];

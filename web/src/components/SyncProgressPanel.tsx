@@ -1,20 +1,34 @@
 import type { SyncJob } from "../api/types";
+import { RefreshButton } from "./RefreshButton";
 
 interface Props {
   job: SyncJob | null;
   isPending: boolean;
+  onRetry?: () => void;
+  retryDisabled?: boolean;
 }
 
 const DONE_GRACE_MS = 30_000;
 
-export function SyncProgressPanel({ job, isPending }: Props) {
+export function SyncProgressPanel({
+  job,
+  isPending,
+  onRetry,
+  retryDisabled,
+}: Props) {
   const active =
     isPending || job?.status === "queued" || job?.status === "running";
   const recentlyDone =
     job?.status === "done" &&
     job.finishedAt != null &&
     Date.now() - Date.parse(job.finishedAt) < DONE_GRACE_MS;
-  if (!active && job?.status !== "failed" && !recentlyDone) return null;
+  if (
+    !active &&
+    job?.status !== "failed" &&
+    job?.status !== "interrupted" &&
+    !recentlyDone
+  )
+    return null;
 
   const durationSec =
     job?.startedAt && job?.finishedAt
@@ -43,7 +57,10 @@ export function SyncProgressPanel({ job, isPending }: Props) {
       ? `${done + failed}/${total} ARPs`
       : undefined;
   const itemsPageDetail =
-    phase === "items" && itemPage != null && itemTotalPages != null && itemTotalPages > 1
+    phase === "items" &&
+    itemPage != null &&
+    itemTotalPages != null &&
+    itemTotalPages > 1
       ? `pág. ${itemPage}/${itemTotalPages}`
       : undefined;
   const cnpjDetail =
@@ -56,18 +73,14 @@ export function SyncProgressPanel({ job, isPending }: Props) {
       <PhaseRow
         label="ARPs"
         state={phase === "arps" ? "running" : pastArps ? "done" : "waiting"}
-        detail={
-          pastArps && !isPortalPhase ? `${total} encontradas` : undefined
-        }
+        detail={pastArps && !isPortalPhase ? `${total} encontradas` : undefined}
       />
       <PhaseRow
         label="Itens"
         state={
           phase === "items"
             ? "running"
-            : phase === "empenhos" ||
-                isPortalPhase ||
-                (!active && pastArps)
+            : phase === "empenhos" || isPortalPhase || (!active && pastArps)
               ? "done"
               : "waiting"
         }
@@ -92,37 +105,51 @@ export function SyncProgressPanel({ job, isPending }: Props) {
       <PhaseRow
         label="CNPJs"
         state={
-          isPortalPhase
-            ? "running"
-            : !active && pastArps
-              ? "done"
-              : "waiting"
+          isPortalPhase ? "running" : !active && pastArps ? "done" : "waiting"
         }
         detail={cnpjDetail}
         subDetail={cnpjSubDetail}
       />
-      {(p?.failedArps ?? 0) > 0 && (
-        <div className="text-[11px] text-govbr-danger mt-1">
-          {p!.failedArps} ARP{p!.failedArps > 1 ? "s" : ""} com falha
-          {p?.lastError ? ` · ${p.lastError}` : ""}
-        </div>
-      )}
-      {durationSec != null && job?.status === "done" && (
-        <div className="text-[11px] text-emerald-700 mt-1">
-          Concluído em {formatDuration(durationSec)}
-        </div>
-      )}
-      {durationSec != null && job?.status === "failed" && (
-        <div className="text-[11px] text-govbr-danger mt-1">
-          Falhou após {formatDuration(durationSec)}
-          {p?.lastError ? ` · ${p.lastError}` : ""}
-        </div>
-      )}
-      {job?.status === "failed" && (p?.failedArps ?? 0) === 0 && durationSec == null && (
-        <div className="text-[11px] text-govbr-danger mt-1">
-          Falha na sincronização{p?.lastError ? ` · ${p.lastError}` : ""}
-        </div>
-      )}
+      <div className="flex justify-between">
+        {(p?.failedArps ?? 0) > 0 && (
+          <div className="text-[11px] text-govbr-danger mt-1">
+            {p!.failedArps} ARP{p!.failedArps > 1 ? "s" : ""} com falha
+            {p?.lastError ? ` · ${p.lastError}` : ""}
+          </div>
+        )}
+        {durationSec != null && job?.status === "done" && (
+          <div className="text-[11px] text-emerald-700 mt-1">
+            Concluído em {formatDuration(durationSec)}
+          </div>
+        )}
+        {durationSec != null && job?.status === "failed" && (
+          <div className="text-[11px] text-govbr-danger mt-1">
+            Falhou após {formatDuration(durationSec)}
+            {p?.lastError ? ` · ${p.lastError}` : ""}
+          </div>
+        )}
+        {job?.status === "failed" &&
+          (p?.failedArps ?? 0) === 0 &&
+          durationSec == null && (
+            <div className="text-[11px] text-govbr-danger mt-1">
+              Falha na sincronização{p?.lastError ? ` · ${p.lastError}` : ""}
+            </div>
+          )}
+        {job?.status === "interrupted" && (
+          <div className="text-[11px] text-amber-600 mt-1">
+            Servidor reiniciado · retomando automaticamente…
+          </div>
+        )}
+        {(job?.status === "failed" || job?.status === "interrupted") &&
+          onRetry && (
+            <RefreshButton
+              onClick={onRetry}
+              isPending={isPending}
+              title="Tentar novamente"
+              disabled={retryDisabled}
+            />
+          )}
+      </div>
     </div>
   );
 }
@@ -155,9 +182,25 @@ function PhaseRow({
     <div className="flex items-center gap-3">
       <div className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
         {state === "done" && (
-          <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 16 16">
-            <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M5 8l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <svg
+            className="w-4 h-4 text-emerald-600"
+            fill="none"
+            viewBox="0 0 16 16"
+          >
+            <circle
+              cx="8"
+              cy="8"
+              r="7"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            />
+            <path
+              d="M5 8l2 2 4-4"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         )}
         {state === "running" && (
@@ -180,10 +223,14 @@ function PhaseRow({
       </span>
       <div className="flex flex-col items-end gap-0.5">
         {detail && (
-          <span className="text-[11px] tabular-nums text-slate-500">{detail}</span>
+          <span className="text-[11px] tabular-nums text-slate-500">
+            {detail}
+          </span>
         )}
         {subDetail && (
-          <span className="text-[10px] tabular-nums text-govbr-blue">{subDetail}</span>
+          <span className="text-[10px] tabular-nums text-govbr-blue">
+            {subDetail}
+          </span>
         )}
       </div>
     </div>

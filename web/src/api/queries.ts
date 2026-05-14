@@ -100,7 +100,7 @@ export function useUasgJob(codigoUasg: string, forceActive = false) {
       const data = await uasgsApi.syncStatus(codigoUasg);
       const status = data.job?.status;
       // Job finished — refresh dependent data so blurred panels populate.
-      if (status === "done" || status === "failed" || status === "cancelled") {
+      if (status === "done" || status === "failed" || status === "cancelled" || status === "interrupted") {
         qc.invalidateQueries({ queryKey: qk.arpsSummary(codigoUasg) });
       }
       return data;

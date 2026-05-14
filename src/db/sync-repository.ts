@@ -4,6 +4,7 @@ import type { AppDatabase } from "./connection.js";
 export interface StoredJsonRecord<T = unknown> {
   raw: T;
   lastSyncedAt: string;
+  lastChangedAt: string | null;
 }
 
 export interface StoredArpRecord extends StoredJsonRecord<Arp> {
@@ -18,15 +19,17 @@ export class SqliteSyncRepository {
     this.db
       .prepare(
         `
-      INSERT INTO arps (numero_controle_pncp_ata, codigo_uasg, raw_json, last_synced_at)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO arps (numero_controle_pncp_ata, codigo_uasg, raw_json, last_synced_at, last_changed_at)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(numero_controle_pncp_ata) DO UPDATE SET
         codigo_uasg = excluded.codigo_uasg,
         raw_json = excluded.raw_json,
-        last_synced_at = excluded.last_synced_at
+        last_synced_at = excluded.last_synced_at,
+        last_changed_at = CASE WHEN raw_json = excluded.raw_json
+          THEN last_changed_at ELSE excluded.last_changed_at END
     `,
       )
-      .run(arp.numeroControlePncpAta, codigoUasg, JSON.stringify(arp), now);
+      .run(arp.numeroControlePncpAta, codigoUasg, JSON.stringify(arp), now, now);
   }
 
   upsertArpItem(numeroControlePncpAta: string, item: ArpItem): void {
@@ -34,12 +37,14 @@ export class SqliteSyncRepository {
     this.db
       .prepare(
         `
-      INSERT INTO arp_items (numero_controle_pncp_ata, numero_item, ni_fornecedor, raw_json, last_synced_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO arp_items (numero_controle_pncp_ata, numero_item, ni_fornecedor, raw_json, last_synced_at, last_changed_at)
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(numero_controle_pncp_ata, numero_item) DO UPDATE SET
         ni_fornecedor = excluded.ni_fornecedor,
         raw_json = excluded.raw_json,
-        last_synced_at = excluded.last_synced_at
+        last_synced_at = excluded.last_synced_at,
+        last_changed_at = CASE WHEN raw_json = excluded.raw_json
+          THEN last_changed_at ELSE excluded.last_changed_at END
     `,
       )
       .run(
@@ -47,6 +52,7 @@ export class SqliteSyncRepository {
         item.numeroItem,
         normalizeDigits(item.niFornecedor),
         JSON.stringify(item),
+        now,
         now,
       );
   }
@@ -56,14 +62,16 @@ export class SqliteSyncRepository {
     this.db
       .prepare(
         `
-      INSERT INTO pessoas_juridicas (cnpj, raw_json, last_synced_at)
-      VALUES (?, ?, ?)
+      INSERT INTO pessoas_juridicas (cnpj, raw_json, last_synced_at, last_changed_at)
+      VALUES (?, ?, ?, ?)
       ON CONFLICT(cnpj) DO UPDATE SET
         raw_json = excluded.raw_json,
-        last_synced_at = excluded.last_synced_at
+        last_synced_at = excluded.last_synced_at,
+        last_changed_at = CASE WHEN raw_json = excluded.raw_json
+          THEN last_changed_at ELSE excluded.last_changed_at END
     `,
       )
-      .run(normalizeDigits(cnpj), JSON.stringify(raw), now);
+      .run(normalizeDigits(cnpj), JSON.stringify(raw), now, now);
   }
 
   upsertEmpenho(
@@ -76,14 +84,16 @@ export class SqliteSyncRepository {
     this.db
       .prepare(
         `
-      INSERT INTO empenhos (id, numero_controle_pncp_ata, numero_item, raw_json, last_synced_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO empenhos (id, numero_controle_pncp_ata, numero_item, raw_json, last_synced_at, last_changed_at)
+      VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         raw_json = excluded.raw_json,
-        last_synced_at = excluded.last_synced_at
+        last_synced_at = excluded.last_synced_at,
+        last_changed_at = CASE WHEN raw_json = excluded.raw_json
+          THEN last_changed_at ELSE excluded.last_changed_at END
     `,
       )
-      .run(id, numeroControlePncpAta, numeroItem, JSON.stringify(raw), now);
+      .run(id, numeroControlePncpAta, numeroItem, JSON.stringify(raw), now, now);
   }
 
   markEmpenhosSync(numeroControlePncpAta: string): void {
@@ -105,8 +115,11 @@ export class SqliteSyncRepository {
     itemCount: number;
     empenhoCount: number;
     lastSyncedAt: string;
+    lastChangedAt: string | null;
     lastItemsSyncedAt: string | null;
+    lastItemsChangedAt: string | null;
     lastEmpenhosSyncedAt: string | null;
+    lastEmpenhosChangedAt: string | null;
   }[] {
     const rows = this.db
       .prepare(
@@ -114,10 +127,13 @@ export class SqliteSyncRepository {
       SELECT
         a.raw_json,
         a.last_synced_at,
+        a.last_changed_at,
         (SELECT COUNT(*) FROM arp_items i WHERE i.numero_controle_pncp_ata = a.numero_controle_pncp_ata) AS item_count,
         (SELECT COUNT(*) FROM empenhos e WHERE e.numero_controle_pncp_ata = a.numero_controle_pncp_ata) AS empenho_count,
         (SELECT MAX(i.last_synced_at) FROM arp_items i WHERE i.numero_controle_pncp_ata = a.numero_controle_pncp_ata) AS last_items_synced_at,
-        a.last_empenhos_synced_at
+        (SELECT MAX(i.last_changed_at) FROM arp_items i WHERE i.numero_controle_pncp_ata = a.numero_controle_pncp_ata) AS last_items_changed_at,
+        a.last_empenhos_synced_at,
+        (SELECT MAX(e.last_changed_at) FROM empenhos e WHERE e.numero_controle_pncp_ata = a.numero_controle_pncp_ata) AS last_empenhos_changed_at
       FROM arps a
       WHERE a.codigo_uasg = ?
       ORDER BY a.last_synced_at DESC
@@ -126,35 +142,43 @@ export class SqliteSyncRepository {
       .all(codigoUasg) as {
       raw_json: string;
       last_synced_at: string;
+      last_changed_at: string | null;
       item_count: number;
       empenho_count: number;
       last_items_synced_at: string | null;
+      last_items_changed_at: string | null;
       last_empenhos_synced_at: string | null;
+      last_empenhos_changed_at: string | null;
     }[];
     return rows.map((row) => ({
       arp: JSON.parse(row.raw_json) as Arp,
       itemCount: row.item_count,
       empenhoCount: row.empenho_count,
       lastSyncedAt: row.last_synced_at,
+      lastChangedAt: row.last_changed_at,
       lastItemsSyncedAt: row.last_items_synced_at,
+      lastItemsChangedAt: row.last_items_changed_at,
       lastEmpenhosSyncedAt: row.last_empenhos_synced_at,
+      lastEmpenhosChangedAt: row.last_empenhos_changed_at,
     }));
   }
 
   findArpsByUasg(codigoUasg: string): StoredArpRecord[] {
     const rows = this.db
       .prepare(
-        "SELECT codigo_uasg, raw_json, last_synced_at FROM arps WHERE codigo_uasg = ? ORDER BY last_synced_at DESC",
+        "SELECT codigo_uasg, raw_json, last_synced_at, last_changed_at FROM arps WHERE codigo_uasg = ? ORDER BY last_synced_at DESC",
       )
       .all(codigoUasg) as {
       codigo_uasg: string;
       raw_json: string;
       last_synced_at: string;
+      last_changed_at: string | null;
     }[];
     return rows.map((row) => ({
       codigoUasg: row.codigo_uasg,
       raw: JSON.parse(row.raw_json) as Arp,
       lastSyncedAt: row.last_synced_at,
+      lastChangedAt: row.last_changed_at,
     }));
   }
 
@@ -196,31 +220,39 @@ export class SqliteSyncRepository {
   findItemsByArp(numeroControlePncpAta: string): StoredJsonRecord<ArpItem>[] {
     const rows = this.db
       .prepare(
-        "SELECT raw_json, last_synced_at FROM arp_items WHERE numero_controle_pncp_ata = ? ORDER BY CAST(numero_item AS INTEGER)",
+        "SELECT raw_json, last_synced_at, last_changed_at FROM arp_items WHERE numero_controle_pncp_ata = ? ORDER BY CAST(numero_item AS INTEGER)",
       )
       .all(numeroControlePncpAta) as {
       raw_json: string;
       last_synced_at: string;
+      last_changed_at: string | null;
     }[];
     return rows.map((row) => ({
       raw: JSON.parse(row.raw_json) as ArpItem,
       lastSyncedAt: row.last_synced_at,
+      lastChangedAt: row.last_changed_at,
     }));
   }
 
   findArp(numeroControlePncpAta: string): StoredArpRecord | null {
     const row = this.db
       .prepare(
-        "SELECT codigo_uasg, raw_json, last_synced_at FROM arps WHERE numero_controle_pncp_ata = ?",
+        "SELECT codigo_uasg, raw_json, last_synced_at, last_changed_at FROM arps WHERE numero_controle_pncp_ata = ?",
       )
       .get(numeroControlePncpAta) as
-      | { codigo_uasg: string; raw_json: string; last_synced_at: string }
+      | {
+          codigo_uasg: string;
+          raw_json: string;
+          last_synced_at: string;
+          last_changed_at: string | null;
+        }
       | undefined;
     return row
       ? {
           codigoUasg: row.codigo_uasg,
           raw: JSON.parse(row.raw_json) as Arp,
           lastSyncedAt: row.last_synced_at,
+          lastChangedAt: row.last_changed_at,
         }
       : null;
   }
@@ -231,15 +263,20 @@ export class SqliteSyncRepository {
   ): StoredJsonRecord<Arp> | null {
     const row = this.db
       .prepare(
-        "SELECT raw_json, last_synced_at FROM arps WHERE numero_controle_pncp_ata = ? AND codigo_uasg = ?",
+        "SELECT raw_json, last_synced_at, last_changed_at FROM arps WHERE numero_controle_pncp_ata = ? AND codigo_uasg = ?",
       )
       .get(numeroControlePncpAta, codigoUasg) as
-      | { raw_json: string; last_synced_at: string }
+      | {
+          raw_json: string;
+          last_synced_at: string;
+          last_changed_at: string | null;
+        }
       | undefined;
     return row
       ? {
           raw: JSON.parse(row.raw_json) as Arp,
           lastSyncedAt: row.last_synced_at,
+          lastChangedAt: row.last_changed_at,
         }
       : null;
   }
@@ -250,15 +287,20 @@ export class SqliteSyncRepository {
   ): StoredJsonRecord<ArpItem> | null {
     const row = this.db
       .prepare(
-        "SELECT raw_json, last_synced_at FROM arp_items WHERE numero_controle_pncp_ata = ? AND numero_item = ?",
+        "SELECT raw_json, last_synced_at, last_changed_at FROM arp_items WHERE numero_controle_pncp_ata = ? AND numero_item = ?",
       )
       .get(numeroControlePncpAta, numeroItem) as
-      | { raw_json: string; last_synced_at: string }
+      | {
+          raw_json: string;
+          last_synced_at: string;
+          last_changed_at: string | null;
+        }
       | undefined;
     return row
       ? {
           raw: JSON.parse(row.raw_json) as ArpItem,
           lastSyncedAt: row.last_synced_at,
+          lastChangedAt: row.last_changed_at,
         }
       : null;
   }
@@ -316,15 +358,20 @@ export class SqliteSyncRepository {
   findPessoaJuridica(cnpj: string): StoredJsonRecord | null {
     const row = this.db
       .prepare(
-        "SELECT raw_json, last_synced_at FROM pessoas_juridicas WHERE cnpj = ?",
+        "SELECT raw_json, last_synced_at, last_changed_at FROM pessoas_juridicas WHERE cnpj = ?",
       )
       .get(normalizeDigits(cnpj)) as
-      | { raw_json: string; last_synced_at: string }
+      | {
+          raw_json: string;
+          last_synced_at: string;
+          last_changed_at: string | null;
+        }
       | undefined;
     return row
       ? {
           raw: JSON.parse(row.raw_json) as unknown,
           lastSyncedAt: row.last_synced_at,
+          lastChangedAt: row.last_changed_at,
         }
       : null;
   }
@@ -376,6 +423,24 @@ export class SqliteSyncRepository {
       )
       .get(userId, numeroControlePncpAta, numeroItem);
     return row !== undefined;
+  }
+
+  findUserUasgForSupplier(userId: string, cnpj: string): string | null {
+    const normalizedCnpj = normalizeDigits(cnpj);
+    if (!normalizedCnpj) return null;
+    const row = this.db
+      .prepare(
+        `
+      SELECT a.codigo_uasg AS codigo_uasg
+      FROM user_uasgs uu
+      INNER JOIN arps a ON a.codigo_uasg = uu.codigo_uasg
+      INNER JOIN arp_items ai ON ai.numero_controle_pncp_ata = a.numero_controle_pncp_ata
+      WHERE uu.user_id = ? AND ai.ni_fornecedor = ?
+      LIMIT 1
+    `,
+      )
+      .get(userId, normalizedCnpj) as { codigo_uasg: string } | undefined;
+    return row?.codigo_uasg ?? null;
   }
 
   userOwnsPessoaJuridica(userId: string, cnpj: string): boolean {

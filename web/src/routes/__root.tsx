@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import type { QueryClient } from "@tanstack/react-query";
+import { PostHogProvider, usePostHog } from "posthog-js/react";
 import { useLogout, useMe } from "../api/queries";
 
 export interface RouterContext {
@@ -14,13 +15,31 @@ export interface RouterContext {
 }
 
 export const Route = createRootRouteWithContext<RouterContext>()({
-  component: RootLayout,
+  component: Root,
 });
+
+function Root() {
+  return (
+    <PostHogProvider
+      apiKey={import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN!}
+      options={{
+        api_host: "/ingest",
+        ui_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
+        defaults: "2026-01-30",
+        capture_exceptions: true,
+        debug: import.meta.env.DEV,
+      }}
+    >
+      <RootLayout />
+    </PostHogProvider>
+  );
+}
 
 function RootLayout() {
   const { data, isLoading } = useMe();
   const logout = useLogout();
   const navigate = useNavigate();
+  const posthog = usePostHog();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const onLogin = path.startsWith("/login");
   const isAuthed = !!data?.user;
@@ -48,6 +67,8 @@ function RootLayout() {
             <button
               type="button"
               onClick={() => {
+                posthog.capture("user_logged_out");
+                posthog.reset();
                 logout.mutate(undefined, {
                   onSuccess: () => navigate({ to: "/login", replace: true }),
                 });

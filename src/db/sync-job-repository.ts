@@ -6,7 +6,8 @@ export type SyncJobStatus =
   | "running"
   | "done"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "interrupted";
 
 export type SyncJobPhase =
   | "arps"
@@ -15,7 +16,16 @@ export type SyncJobPhase =
   | "portal-supplier"
   | null;
 
-export type SyncJobKind = "uasg" | "portal-supplier-uasg" | "portal-supplier-arp";
+export type SyncJobKind =
+  | "uasg"
+  | "portal-supplier-uasg"
+  | "portal-supplier-arp"
+  | "bg-refresh-arp"
+  | "bg-refresh-supplier";
+
+export const BG_PRIORITY_RED = 5;
+export const BG_PRIORITY_YELLOW = 1;
+export const USER_PRIORITY = 10;
 
 export interface SyncJob {
   id: string;
@@ -35,6 +45,7 @@ export interface SyncJob {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  priority: number;
 }
 
 export interface SyncJobProgressPatch {
@@ -66,6 +77,7 @@ interface Row {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  priority: number;
 }
 
 function rowToJob(row: Row): SyncJob {
@@ -87,6 +99,7 @@ function rowToJob(row: Row): SyncJob {
     createdAt: row.created_at,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
+    priority: row.priority ?? 0,
   };
 }
 
@@ -94,7 +107,13 @@ export class SqliteSyncJobRepository {
   constructor(private readonly db: AppDatabase) {}
 
   enqueue(userId: string, codigoUasg: string): SyncJob {
-    return this.enqueueWithKind(userId, codigoUasg, "uasg", null);
+    return this.enqueueWithKind(
+      userId,
+      codigoUasg,
+      "uasg",
+      null,
+      USER_PRIORITY,
+    );
   }
 
   enqueuePortalSupplierUasg(userId: string, codigoUasg: string): SyncJob {
@@ -103,6 +122,7 @@ export class SqliteSyncJobRepository {
       codigoUasg,
       "portal-supplier-uasg",
       codigoUasg,
+      USER_PRIORITY,
     );
   }
 
@@ -116,7 +136,61 @@ export class SqliteSyncJobRepository {
       codigoUasg,
       "portal-supplier-arp",
       numeroControlePncpAta,
+      USER_PRIORITY,
     );
+  }
+
+  /**
+   * Background ARP refresh. No credit consumed (kind 'bg-%' excluded from
+   * quota). Dedup: skips if same kind+target already queued or running.
+   * Returns the existing job in that case.
+   */
+  enqueueBgRefreshArp(
+    userId: string,
+    codigoUasg: string,
+    numeroControlePncpAta: string,
+    priority: number = BG_PRIORITY_YELLOW,
+  ): SyncJob {
+    const existing = this.findActiveBg(
+      "bg-refresh-arp",
+      numeroControlePncpAta,
+    );
+    if (existing) return existing;
+    return this.enqueueWithKind(
+      userId,
+      codigoUasg,
+      "bg-refresh-arp",
+      numeroControlePncpAta,
+      priority,
+    );
+  }
+
+  enqueueBgRefreshSupplier(
+    userId: string,
+    codigoUasg: string,
+    cnpj: string,
+    priority: number = BG_PRIORITY_YELLOW,
+  ): SyncJob {
+    const existing = this.findActiveBg("bg-refresh-supplier", cnpj);
+    if (existing) return existing;
+    return this.enqueueWithKind(
+      userId,
+      codigoUasg,
+      "bg-refresh-supplier",
+      cnpj,
+      priority,
+    );
+  }
+
+  private findActiveBg(kind: SyncJobKind, targetId: string): SyncJob | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM sync_jobs
+         WHERE kind = ? AND target_id = ? AND status IN ('queued','running')
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(kind, targetId) as Row | undefined;
+    return row ? rowToJob(row) : null;
   }
 
   private enqueueWithKind(
@@ -124,16 +198,17 @@ export class SqliteSyncJobRepository {
     codigoUasg: string,
     kind: SyncJobKind,
     targetId: string | null,
+    priority: number,
   ): SyncJob {
     const id = randomUUID();
     const now = new Date().toISOString();
     this.db
       .prepare(
         `INSERT INTO sync_jobs
-          (id, user_id, codigo_uasg, kind, target_id, status, created_at)
-         VALUES (?, ?, ?, ?, ?, 'queued', ?)`,
+          (id, user_id, codigo_uasg, kind, target_id, status, created_at, priority)
+         VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)`,
       )
-      .run(id, userId, codigoUasg, kind, targetId, now);
+      .run(id, userId, codigoUasg, kind, targetId, now, priority);
     const job = this.findById(id);
     if (!job) throw new Error("failed to enqueue sync job");
     return job;
@@ -147,10 +222,12 @@ export class SqliteSyncJobRepository {
   }
 
   findActiveForUasg(userId: string, codigoUasg: string): SyncJob | null {
+    // Only user-driven full UASG syncs — bg refreshes must not block the
+    // manual "Sincronizar UASG" button or muddle the progress panel.
     const row = this.db
       .prepare(
         `SELECT * FROM sync_jobs
-         WHERE user_id = ? AND codigo_uasg = ?
+         WHERE user_id = ? AND codigo_uasg = ? AND kind = 'uasg'
            AND status IN ('queued','running')
          ORDER BY created_at DESC LIMIT 1`,
       )
@@ -162,7 +239,7 @@ export class SqliteSyncJobRepository {
     const row = this.db
       .prepare(
         `SELECT * FROM sync_jobs
-         WHERE user_id = ? AND codigo_uasg = ?
+         WHERE user_id = ? AND codigo_uasg = ? AND kind = 'uasg'
          ORDER BY created_at DESC LIMIT 1`,
       )
       .get(userId, codigoUasg) as Row | undefined;
@@ -180,7 +257,7 @@ export class SqliteSyncJobRepository {
         .prepare(
           `SELECT * FROM sync_jobs
            WHERE status = 'queued'
-           ORDER BY created_at ASC LIMIT 1`,
+           ORDER BY priority DESC, created_at ASC LIMIT 1`,
         )
         .get() as Row | undefined;
       if (!row) return null;
@@ -251,11 +328,14 @@ export class SqliteSyncJobRepository {
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
     ).toISOString();
     // Only UASG syncs count toward the user's monthly quota — portal-supplier
-    // jobs are gated by the Portal API's own per-minute quota instead.
+    // jobs are gated by the Portal API's own per-minute quota, and bg-refresh
+    // jobs are free (staleness-driven, no user intent). Cancelled and
+    // interrupted jobs are excluded (credit refunded).
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS count FROM sync_jobs
-         WHERE user_id = ? AND created_at >= ? AND kind = 'uasg' AND status != 'cancelled'`,
+         WHERE user_id = ? AND created_at >= ? AND kind = 'uasg'
+           AND status NOT IN ('cancelled', 'interrupted')`,
       )
       .get(userId, monthStart) as { count: number };
     return row.count;
@@ -293,18 +373,45 @@ export class SqliteSyncJobRepository {
   }
 
   /**
-   * On boot, mark any 'running' jobs as failed — they were owned by a
-   * previous process that is no longer running. Returns the affected count.
+   * On boot, mark any 'running' jobs as interrupted (credit refunded) and
+   * immediately re-queue each one so the work resumes. The sync service skips
+   * ARPs already stored in the DB, so the new job only processes the
+   * unfinished tail. Returns the number of jobs re-queued.
    */
-  failOrphanedRunning(reason = "process restarted"): number {
-    const now = new Date().toISOString();
-    const res = this.db
-      .prepare(
-        `UPDATE sync_jobs
-         SET status = 'failed', finished_at = ?, last_error = ?
-         WHERE status = 'running'`,
-      )
-      .run(now, reason);
-    return res.changes;
+  requeueOrphanedRunning(): number {
+    const tx = this.db.transaction((): number => {
+      const running = this.db
+        .prepare(`SELECT * FROM sync_jobs WHERE status = 'running'`)
+        .all() as Row[];
+      if (running.length === 0) return 0;
+      const now = new Date().toISOString();
+      this.db
+        .prepare(
+          `UPDATE sync_jobs SET status = 'interrupted', finished_at = ?
+           WHERE status = 'running'`,
+        )
+        .run(now);
+      for (const job of running) {
+        // Use a timestamp 1 ms ahead so findLatestForUasg returns the new job.
+        const queuedAt = new Date(Date.now() + 1).toISOString();
+        this.db
+          .prepare(
+            `INSERT INTO sync_jobs
+               (id, user_id, codigo_uasg, kind, target_id, status, created_at, priority)
+             VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)`,
+          )
+          .run(
+            randomUUID(),
+            job.user_id,
+            job.codigo_uasg,
+            job.kind,
+            job.target_id,
+            queuedAt,
+            job.priority ?? USER_PRIORITY,
+          );
+      }
+      return running.length;
+    });
+    return tx();
   }
 }

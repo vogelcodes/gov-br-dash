@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link, createFileRoute, useParams } from "@tanstack/react-router";
+import { usePostHog } from "posthog-js/react";
 import {
   useSupplierPortalSummary,
   useTriggerSupplierPortalSync,
@@ -11,6 +12,8 @@ import type {
 } from "../api/suppliers";
 import { fmtCnpj, fmtMoney } from "../lib/format";
 import { EmpenhoDetailPanel } from "../components/EmpenhoDetailPanel";
+import { staleness } from "../lib/staleness";
+import { StaleBadge, staleTintClass } from "../components/StaleBadge";
 
 export const Route = createFileRoute("/uasg/$codigoUasg/cnpj/$niFornecedor")({
   component: SupplierPortalPage,
@@ -22,6 +25,7 @@ function SupplierPortalPage() {
   });
   const summaryQ = useSupplierPortalSummary(niFornecedor);
   const triggerSync = useTriggerSupplierPortalSync(niFornecedor);
+  const posthog = usePostHog();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [autoSyncTried, setAutoSyncTried] = useState(false);
 
@@ -74,8 +78,15 @@ function SupplierPortalPage() {
   const toggle = (documento: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(documento)) next.delete(documento);
-      else next.add(documento);
+      if (next.has(documento)) {
+        next.delete(documento);
+      } else {
+        next.add(documento);
+        posthog.capture("empenho_details_expanded", {
+          codigo_uasg: codigoUasg,
+          ni_fornecedor: niFornecedor,
+        });
+      }
       return next;
     });
   };
@@ -123,10 +134,18 @@ function SupplierPortalPage() {
     0,
   );
 
+  const supplierStale = staleness(data?.pessoa?.lastSyncedAt, "supplier");
+
   return (
     <section className="flex-1 min-w-0 flex flex-col gap-4">
       {/* HEADER */}
-      <div className="panel">
+      <div className={`panel relative ${staleTintClass(supplierStale)}`}>
+        <div className="absolute top-3 right-3">
+          <StaleBadge
+            level={supplierStale}
+            lastChangedAt={data?.pessoa?.lastSyncedAt}
+          />
+        </div>
         <div className="flex items-start gap-3 flex-wrap mb-3">
           <div className="flex-1 min-w-0">
             <h2 className="text-2xl font-medium text-slate-900">
@@ -164,7 +183,13 @@ function SupplierPortalPage() {
         <div className="flex gap-2 items-center mt-4 flex-wrap">
           <button
             type="button"
-            onClick={() => triggerSync.mutate()}
+            onClick={() => {
+              posthog.capture("supplier_portal_sync_triggered", {
+                codigo_uasg: codigoUasg,
+                ni_fornecedor: niFornecedor,
+              });
+              triggerSync.mutate();
+            }}
             disabled={triggerSync.isPending}
             className="text-sm px-3 py-1 rounded border border-govbr-blue text-govbr-blue hover:bg-govbr-lightblue disabled:opacity-50"
             title="Buscar contratos, empenhos e sanções no Portal da Transparência"
@@ -208,8 +233,8 @@ function SupplierPortalPage() {
               <>
                 Sem dados do Portal da Transparência para este fornecedor.
                 <span className="block mt-2 text-slate-500">
-                  Use o botão "Sincronizar dados do Portal" acima para
-                  consultar a API agora.
+                  Use o botão "Sincronizar dados do Portal" acima para consultar
+                  a API agora.
                 </span>
               </>
             )}
@@ -224,11 +249,7 @@ function SupplierPortalPage() {
 
       {/* EMPENHOS */}
       {empenhos.length > 0 && (
-        <EmpenhosSection
-          rows={empenhos}
-          expanded={expanded}
-          toggle={toggle}
-        />
+        <EmpenhosSection rows={empenhos} expanded={expanded} toggle={toggle} />
       )}
     </section>
   );
@@ -259,9 +280,7 @@ function EmpresaBadges({
         <Badge color="success">Possui contrato</Badge>
       )}
       {pessoa.emitiuNFe && <Badge color="success">Emitiu NF-e</Badge>}
-      {pessoa.participanteLicitacao && (
-        <Badge color="info">Licitações</Badge>
-      )}
+      {pessoa.participanteLicitacao && <Badge color="info">Licitações</Badge>}
       {pessoa.favorecidoDespesas && (
         <Badge color="info">Favorecido despesas</Badge>
       )}
@@ -284,9 +303,7 @@ function Badge({
         ? "bg-emerald-100 text-emerald-700"
         : "bg-sky-100 text-sky-700";
   return (
-    <span
-      className={`px-2 py-0.5 rounded text-[11px] font-medium ${cls}`}
-    >
+    <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${cls}`}>
       {children}
     </span>
   );
@@ -387,10 +404,7 @@ function ContratosSection({ rows }: { rows: PortalContratoRow[] }) {
               return (
                 <tr key={c.contratoId} className="border-t border-slate-100">
                   <td className="py-1 tabular-nums">{numero}</td>
-                  <td
-                    className="py-1 max-w-[420px] truncate"
-                    title={objeto}
-                  >
+                  <td className="py-1 max-w-[420px] truncate" title={objeto}>
                     {objeto}
                   </td>
                   <td className="py-1 tabular-nums">{inicio}</td>
@@ -498,10 +512,7 @@ function EmpenhosSection({
   );
 }
 
-function readField(
-  obj: Record<string, unknown>,
-  key: string,
-): string | null {
+function readField(obj: Record<string, unknown>, key: string): string | null {
   const v = obj[key];
   if (typeof v === "string" && v.length > 0) return v;
   if (typeof v === "number") return String(v);

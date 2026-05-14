@@ -4,7 +4,14 @@ import {
   useParams,
   useRouterState,
 } from "@tanstack/react-router";
-import { useArpsSummary, useQuota, useTriggerSync, useUasgJob, useUasgs } from "../api/queries";
+import { usePostHog } from "posthog-js/react";
+import {
+  useArpsSummary,
+  useQuota,
+  useTriggerSync,
+  useUasgJob,
+  useUasgs,
+} from "../api/queries";
 import { arpsApi } from "../api/arps";
 import { ArpSidebar } from "../components/ArpSidebar";
 import { ExportMenu } from "../components/ExportMenu";
@@ -23,6 +30,7 @@ function UasgDashboard() {
   const triggerSync = useTriggerSync(codigoUasg);
   const jobQ = useUasgJob(codigoUasg, triggerSync.isPending);
   const quotaQ = useQuota();
+  const posthog = usePostHog();
   const summaries = summaryQ.data?.arps ?? [];
   const uasg = uasgsQ.data?.uasgs.find((u) => u.codigoUasg === codigoUasg);
   const job = jobQ.data?.job ?? null;
@@ -44,7 +52,9 @@ function UasgDashboard() {
     <div className="min-h-[calc(100vh-44px)] bg-slate-100">
       <div className="bg-govbr-navy text-white px-6 py-2 flex items-center gap-3 text-xs">
         <span className="opacity-80">UASG {codigoUasg}</span>
-        {uasg?.nomeUasg && <span className="opacity-80">· {uasg.nomeUasg}</span>}
+        {uasg?.nomeUasg && (
+          <span className="opacity-80">· {uasg.nomeUasg}</span>
+        )}
         <div className="ml-auto">
           <SyncBadge codigoUasg={codigoUasg} />
         </div>
@@ -74,7 +84,13 @@ function UasgDashboard() {
                 />
                 <button
                   type="button"
-                  onClick={() => triggerSync.mutate()}
+                  onClick={() => {
+                    posthog.capture("uasg_sync_triggered", {
+                      codigo_uasg: codigoUasg,
+                      quota_remaining: quota?.remaining,
+                    });
+                    triggerSync.mutate();
+                  }}
                   disabled={!canSync}
                   className="btn-secondary"
                   title={
@@ -90,10 +106,23 @@ function UasgDashboard() {
               </div>
               {quota && (
                 <span className="text-[11px] text-slate-500">
-                  {quota.remaining}/{quota.limit} sincronizações restantes este mês
+                  {quota.remaining}/{quota.limit} sincronizações restantes este
+                  mês
                 </span>
               )}
-              <SyncProgressPanel job={job} isPending={triggerSync.isPending} />
+              <SyncProgressPanel
+                job={job}
+                isPending={triggerSync.isPending}
+                onRetry={() => {
+                  posthog.capture("uasg_sync_triggered", {
+                    codigo_uasg: codigoUasg,
+                    quota_remaining: quota?.remaining,
+                    source: "retry",
+                  });
+                  triggerSync.mutate();
+                }}
+                retryDisabled={!canSync}
+              />
             </div>
           </div>
           <KpiStrip summaries={summaries} />

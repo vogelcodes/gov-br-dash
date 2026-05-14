@@ -95,11 +95,30 @@ export class PortalDataSyncService {
       }
     }
 
+    // When includeDetails is false (background job path), the loop body has
+    // no awaits. With thousands of empenhos that starves the event loop and
+    // blocks all HTTP requests until the loop exits. Batch the writes in one
+    // transaction and yield to the loop between batches.
+    const BULK_BATCH = 500;
+    const bulkRows: { documento: string; cnpj: string; ano: number; fase: number; raw: unknown }[] = [];
+    const flushBulk = async (): Promise<void> => {
+      if (bulkRows.length === 0) return;
+      this.portalRepo.bulkUpsertEmpenhos(bulkRows);
+      bulkRows.length = 0;
+      await new Promise((r) => setImmediate(r));
+    };
+
     for (const emp of empenhos) {
       const documento = readField(emp, "documento");
       if (!documento) continue;
       const ano = readNumberField(emp, "ano") ?? years[years.length - 1] ?? 0;
       const fase = readNumberField(emp, "fase") ?? 1;
+      if (!includeDetails) {
+        bulkRows.push({ documento, cnpj: normalizedCnpj, ano, fase, raw: emp });
+        result.empenhos += 1;
+        if (bulkRows.length >= BULK_BATCH) await flushBulk();
+        continue;
+      }
       this.portalRepo.upsertEmpenho(documento, normalizedCnpj, ano, fase, emp);
       result.empenhos += 1;
 
@@ -139,6 +158,7 @@ export class PortalDataSyncService {
         }
       }
     }
+    await flushBulk();
 
     if (includeSancoes) {
       try {

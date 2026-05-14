@@ -1,10 +1,15 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { SqlitePortalDataRepository } from "../db/portal-data-repository.js";
-import type { SqliteSyncJobRepository } from "../db/sync-job-repository.js";
+import {
+  BG_PRIORITY_RED,
+  BG_PRIORITY_YELLOW,
+  type SqliteSyncJobRepository,
+} from "../db/sync-job-repository.js";
 import type { SqliteSyncRepository } from "../db/sync-repository.js";
 import { AuthError, type AuthService } from "../services/auth.js";
 import type { PortalDataSyncService } from "../services/portal-data-sync.js";
+import { staleness } from "../services/staleness.js";
 import {
   renderArpExport,
   renderUasgExport,
@@ -245,6 +250,28 @@ export function createPortalSyncRoutes(deps: PortalSyncRouteDeps) {
           const contratos = deps.portalRepository.listContratosByCnpj(params.data.cnpj);
           const sancoes = deps.portalRepository.listSancoesByCnpj(params.data.cnpj);
           const pessoa = deps.syncRepository.findPessoaJuridica(params.data.cnpj);
+          const level = staleness(pessoa?.lastSyncedAt, "supplier");
+          if (level !== "fresh") {
+            const codigoUasg = deps.syncRepository.findUserUasgForSupplier(
+              user.id,
+              params.data.cnpj,
+            );
+            if (codigoUasg) {
+              try {
+                deps.jobRepository.enqueueBgRefreshSupplier(
+                  user.id,
+                  codigoUasg,
+                  params.data.cnpj,
+                  level === "red" ? BG_PRIORITY_RED : BG_PRIORITY_YELLOW,
+                );
+              } catch (err) {
+                request.log.warn(
+                  { err, cnpj: params.data.cnpj },
+                  "failed to enqueue bg-refresh-supplier",
+                );
+              }
+            }
+          }
           return reply.code(200).send({ pessoa, empenhos, contratos, sancoes });
         } catch (error) {
           return sendUserDataError(reply, error);

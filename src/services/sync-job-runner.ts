@@ -60,11 +60,11 @@ export class SyncJobRunner {
 
   start(): void {
     if (this.loopPromise) return;
-    const orphans = this.jobs.failOrphanedRunning();
+    const orphans = this.jobs.requeueOrphanedRunning();
     if (orphans > 0) {
       this.logger.warn(
         { count: orphans },
-        "Marked stale running sync jobs as failed (process restarted)",
+        "Re-queued interrupted sync jobs after process restart",
       );
     }
     this.loopPromise = this.loop();
@@ -129,7 +129,37 @@ export class SyncJobRunner {
       await this.runPortalJob(job);
       return;
     }
+    if (job.kind === "bg-refresh-arp" || job.kind === "bg-refresh-supplier") {
+      await this.runBgRefreshJob(job);
+      return;
+    }
     this.jobs.complete(job.id, "failed", `unknown job kind: ${job.kind}`);
+  }
+
+  private async runBgRefreshJob(job: SyncJob): Promise<void> {
+    if (!job.targetId) {
+      this.jobs.complete(job.id, "failed", `${job.kind} missing target_id`);
+      return;
+    }
+    try {
+      if (job.kind === "bg-refresh-arp") {
+        await this.syncService.refreshArp(job.targetId);
+      } else {
+        await this.syncService.refreshPessoaJuridica(job.targetId);
+      }
+      this.jobs.complete(job.id, "done");
+      this.logger.info(
+        { jobId: job.id, kind: job.kind, target: job.targetId },
+        "bg refresh done",
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.jobs.complete(job.id, "failed", msg);
+      this.logger.warn(
+        { jobId: job.id, kind: job.kind, err: msg },
+        "bg refresh failed",
+      );
+    }
   }
 
   private async runUasgJob(job: SyncJob): Promise<void> {

@@ -16,7 +16,7 @@ export function EmpenhoBreakdown({ rows, synced }: Props) {
       </div>
     );
   }
-  const maxReg = Math.max(1, ...rows.map((r) => r.registrada));
+  // const maxReg = Math.max(1, ...rows.map((r) => r.registrada));
 
   return (
     <div className="bg-slate-50 rounded p-4 mt-2">
@@ -30,8 +30,8 @@ export function EmpenhoBreakdown({ rows, synced }: Props) {
       {rows.map((r, i) => {
         const pp = pct(r.empenhada, r.registrada);
         const risk = pp < 50 && r.saldo > 0;
-        const fullBar = (r.registrada / maxReg) * 100;
-        const empBar = (r.empenhada / maxReg) * 100;
+        const fullBar = (r.registrada / r.registrada) * 100;
+        const empBar = (r.empenhada / r.registrada) * 100;
         const tipoColor =
           r.tipo === "PARTICIPANTE"
             ? "text-govbr-deepblue"
